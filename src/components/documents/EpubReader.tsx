@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useLayoutEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import ePub from "epubjs";
+import { useResizeObserverErrorHandler } from "@/lib/useResizeObserverErrorHandler";
 
 interface EpubReaderProps {
   url: string | Blob;
@@ -20,179 +22,194 @@ const EpubReader = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [totalPages, setTotalPages] = useState<number>(10); // Default value
-  const [content, setContent] = useState<string>("");
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [currentCfi, setCurrentCfi] = useState<string>("");
 
-  // Use a more robust approach for EPUB rendering
+  const viewerRef = useRef<HTMLDivElement>(null);
+  const bookRef = useRef<any>(null);
+  const renditionRef = useRef<any>(null);
+
+  // Use custom hook to handle ResizeObserver errors
+  useResizeObserverErrorHandler();
+
+  // Initialize and render the EPUB book
   useEffect(() => {
-    const loadContent = async () => {
+    // Clean up function to destroy previous book instance
+    const cleanup = () => {
+      if (bookRef.current) {
+        bookRef.current.destroy();
+        bookRef.current = null;
+      }
+      if (renditionRef.current) {
+        renditionRef.current = null;
+      }
+      // Clean up any inner containers we created
+      if (viewerRef.current) {
+        while (viewerRef.current.firstChild) {
+          viewerRef.current.removeChild(viewerRef.current.firstChild);
+        }
+      }
+    };
+
+    const initializeBook = async () => {
       try {
         setIsLoading(true);
+        cleanup(); // Clean up any existing book
 
-        // Extract text content from the blob
+        if (!viewerRef.current) return;
+
+        // Create a new book instance
+        let book;
         if (url instanceof Blob) {
           try {
-            // Try to read as text
-            const text = await url.text();
-
-            // Check if the content appears to be binary/encoded EPUB content
-            const isBinaryContent = /[\x00-\x08\x0E-\x1F\x80-\xFF]/.test(
-              text.substring(0, 1000),
-            );
-
-            let formattedText = text;
-
-            if (isBinaryContent) {
-              // If it's binary content, provide a readable fallback
-              formattedText = `# EPUB Preview
-
-This EPUB file contains binary content that cannot be displayed directly.
-
-## Book Information
-
-${url instanceof Blob ? `File size: ${(url.size / 1024).toFixed(2)} KB` : "Remote EPUB file"}
-
-EPUB files contain formatted text, images, and other media. For the best reading experience, please download this file and open it with an EPUB reader application.
-
-## Sample Content
-
-If this is "Atomic Habits" by James Clear, here's a preview of what you might find inside:
-
-### Atomic Habits: An Easy and Proven Way to Build Good Habits and Break Bad Ones
-
-Tiny Changes, Remarkable Results
-
-If you're having trouble changing your habits, the problem isn't you. The problem is your system. Bad habits repeat themselves again and again not because you don't want to change, but because you have the wrong system for change. You do not rise to the level of your goals. You fall to the level of your systems. Here, you'll get a proven system that can take you to new heights.
-
-James Clear, one of the world's leading experts on habit formation, reveals practical strategies that will teach you exactly how to form good habits, break bad ones, and master the tiny behaviors that lead to remarkable results.`;
-            } else {
-              // Try to clean up XML/HTML tags if present
-              formattedText = formattedText.replace(/<\/?[^>]+(>|$)/g, "\n");
-
-              // Remove extra whitespace
-              formattedText = formattedText.replace(/\s+/g, " ").trim();
-
-              // Split into paragraphs
-              const paragraphs = formattedText
-                .split(/\n+/)
-                .filter((p) => p.trim().length > 0);
-
-              // Join paragraphs with proper spacing
-              formattedText = paragraphs.join("\n\n");
-            }
-
-            // Create a simplified representation
-            const pageSize = 2000;
-            const currentPageIndex = currentPage - 1;
-            const startIndex = currentPageIndex * pageSize;
-            const endIndex = startIndex + pageSize;
-
-            // Get content for current page
-            setContent(formattedText.substring(startIndex, endIndex));
-            setTotalPages(
-              Math.max(1, Math.ceil(formattedText.length / pageSize)),
-            );
+            // For Blob URLs, we need to create an ArrayBuffer
+            // This is more reliable than object URLs for large files
+            const arrayBuffer = await url.arrayBuffer();
+            book = ePub(arrayBuffer);
+            console.log("EPUB loaded from ArrayBuffer", { size: url.size });
           } catch (err) {
-            console.error("Error reading EPUB content:", err);
-            setContent(
-              "# Unable to Display EPUB Content\n\nThis EPUB file cannot be displayed in the current view. Please download the file to read it in a dedicated EPUB reader.\n\n## Recommended EPUB Readers\n\n- **Calibre** (Windows, macOS, Linux)\n- **Apple Books** (iOS, macOS)\n- **Google Play Books** (Android, Web)\n- **Kobo** (iOS, Android)\n- **Adobe Digital Editions** (Windows, macOS)",
-            );
+            console.error("Error loading from ArrayBuffer:", err);
+            // Fallback to object URL if ArrayBuffer fails
+            const objectUrl = URL.createObjectURL(url);
+            book = ePub(objectUrl);
+            book._objectUrl = objectUrl;
+            console.log("EPUB loaded from Object URL", { size: url.size });
           }
-        } else if (typeof url === "string") {
-          try {
-            const response = await fetch(url);
-            const blob = await response.blob();
-            const text = await blob.text();
-
-            // Check if the content appears to be binary/encoded EPUB content
-            const isBinaryContent = /[\x00-\x08\x0E-\x1F\x80-\xFF]/.test(
-              text.substring(0, 1000),
-            );
-
-            let formattedText = text;
-
-            if (isBinaryContent) {
-              // If it's binary content, provide a readable fallback
-              formattedText = `# EPUB Preview
-
-This EPUB file contains binary content that cannot be displayed directly.
-
-## Book Information
-
-${url instanceof Blob ? `File size: ${(url.size / 1024).toFixed(2)} KB` : "Remote EPUB file"}
-
-EPUB files contain formatted text, images, and other media. For the best reading experience, please download this file and open it with an EPUB reader application.
-
-## Sample Content
-
-If this is "Atomic Habits" by James Clear, here's a preview of what you might find inside:
-
-### Atomic Habits: An Easy and Proven Way to Build Good Habits and Break Bad Ones
-
-Tiny Changes, Remarkable Results
-
-If you're having trouble changing your habits, the problem isn't you. The problem is your system. Bad habits repeat themselves again and again not because you don't want to change, but because you have the wrong system for change. You do not rise to the level of your goals. You fall to the level of your systems. Here, you'll get a proven system that can take you to new heights.
-
-James Clear, one of the world's leading experts on habit formation, reveals practical strategies that will teach you exactly how to form good habits, break bad ones, and master the tiny behaviors that lead to remarkable results.`;
-            } else {
-              // Try to clean up XML/HTML tags if present
-              formattedText = formattedText.replace(/<\/?[^>]+(>|$)/g, "\n");
-
-              // Remove extra whitespace
-              formattedText = formattedText.replace(/\s+/g, " ").trim();
-
-              // Split into paragraphs
-              const paragraphs = formattedText
-                .split(/\n+/)
-                .filter((p) => p.trim().length > 0);
-
-              // Join paragraphs with proper spacing
-              formattedText = paragraphs.join("\n\n");
-            }
-
-            // Create a simplified representation
-            const pageSize = 2000;
-            const currentPageIndex = currentPage - 1;
-            const startIndex = currentPageIndex * pageSize;
-            const endIndex = startIndex + pageSize;
-
-            // Get content for current page
-            setContent(formattedText.substring(startIndex, endIndex));
-            setTotalPages(
-              Math.max(1, Math.ceil(formattedText.length / pageSize)),
-            );
-          } catch (err) {
-            console.error("Error fetching EPUB content:", err);
-            setContent(
-              "# Unable to Display EPUB Content\n\nThis EPUB file cannot be displayed in the current view. Please download the file to read it in a dedicated EPUB reader.\n\n## Recommended EPUB Readers\n\n- **Calibre** (Windows, macOS, Linux)\n- **Apple Books** (iOS, macOS)\n- **Google Play Books** (Android, Web)\n- **Kobo** (iOS, Android)\n- **Adobe Digital Editions** (Windows, macOS)",
-            );
-          }
+        } else {
+          // For string URLs
+          book = ePub(url);
+          console.log("EPUB loaded from URL string");
         }
+
+        bookRef.current = book;
+
+        // Wait for the book to be opened
+        await book.ready;
+
+        // Use a more stable approach with fixed dimensions
+        // Measure once and use those dimensions
+        const containerWidth = viewerRef.current.clientWidth || 600;
+        const containerHeight = viewerRef.current.clientHeight || 800;
+
+        // Create a fixed-size inner container to avoid ResizeObserver issues
+        const innerContainer = document.createElement("div");
+        innerContainer.style.width = `${containerWidth}px`;
+        innerContainer.style.height = `${containerHeight}px`;
+        innerContainer.style.overflow = "hidden";
+        innerContainer.style.position = "relative";
+        viewerRef.current.appendChild(innerContainer);
+
+        // Create rendition with fixed dimensions and disable features that might cause ResizeObserver loops
+        const rendition = book.renderTo(innerContainer, {
+          width: containerWidth,
+          height: containerHeight,
+          spread: "none",
+          flow: "paginated",
+          minSpreadWidth: 800,
+          allowScriptedContent: false, // Disable scripts for security and performance
+          allowPopups: false, // Prevent popups
+          resizeOnOrientationChange: false, // Disable auto-resize on orientation change
+        });
+
+        // Add debug logging
+        console.log("EPUB rendition created", {
+          spine: book.spine ? book.spine.length : "undefined",
+          metadata: book.packaging ? book.packaging.metadata : "undefined",
+        });
+
+        renditionRef.current = rendition;
+
+        // Apply custom styles based on props
+        rendition.themes.default({
+          body: {
+            "font-family": getFontFamilyStyle(fontFamily),
+            "font-size": `${fontSize}px`,
+            "line-height": lineSpacing.toString(),
+            "background-color": isDarkMode ? "#1a1a1a" : "#ffffff",
+            color: isDarkMode ? "#e0e0e0" : "#333333",
+          },
+        });
+
+        // Display the book
+        await rendition.display();
+
+        // Set up event listeners for pagination
+        rendition.on("relocated", (location: any) => {
+          // Update current page information
+          const currentPage = location.start.displayed.page;
+          const totalPages = location.start.displayed.total;
+
+          setCurrentPage(currentPage);
+          setTotalPages(totalPages);
+          setCurrentCfi(location.start.cfi);
+
+          // Store reading position for resuming later
+          if (location.start.cfi) {
+            localStorage.setItem(
+              `epub-position-${book.key()}`,
+              location.start.cfi,
+            );
+          }
+        });
+
+        // Check if we have a saved position
+        const savedCfi = localStorage.getItem(`epub-position-${book.key()}`);
+        if (savedCfi) {
+          rendition.display(savedCfi);
+        }
+
+        // Set up keyboard navigation
+        rendition.on("keyup", (e: KeyboardEvent) => {
+          if (e.key === "ArrowLeft") rendition.prev();
+          if (e.key === "ArrowRight") rendition.next();
+        });
+
+        setIsLoading(false);
       } catch (err) {
-        console.error("Error processing EPUB:", err);
-        setError(
-          "Unable to process this EPUB file. Please try downloading it instead.",
-        );
-      } finally {
+        console.error("Error initializing EPUB:", err);
+
+        // More detailed error message with debugging info
+        let errorMessage = "Unable to load EPUB file. ";
+
+        if (err instanceof Error) {
+          errorMessage += err.message;
+          console.error("Error details:", err.stack);
+        }
+
+        if (url instanceof Blob) {
+          errorMessage += ` File size: ${(url.size / (1024 * 1024)).toFixed(2)}MB, Type: ${url.type}`;
+        }
+
+        setError(errorMessage);
         setIsLoading(false);
       }
     };
 
-    loadContent();
-  }, [url, currentPage]);
+    initializeBook();
 
+    // Cleanup when component unmounts or URL changes
+    return () => {
+      if (bookRef.current && bookRef.current._objectUrl) {
+        URL.revokeObjectURL(bookRef.current._objectUrl);
+      }
+      cleanup();
+    };
+  }, [url, fontFamily, fontSize, lineSpacing, isDarkMode]);
+
+  // Handle page navigation
   const goToPrevious = () => {
-    if (currentPage > 1) {
-      setCurrentPage(currentPage - 1);
+    if (renditionRef.current) {
+      renditionRef.current.prev();
     }
   };
 
   const goToNext = () => {
-    if (currentPage < totalPages) {
-      setCurrentPage(currentPage + 1);
+    if (renditionRef.current) {
+      renditionRef.current.next();
     }
   };
 
+  // Handle error state
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-center">
@@ -210,7 +227,8 @@ James Clear, one of the world's leading experts on habit formation, reveals prac
     );
   }
 
-  const getFontFamilyStyle = (font: string): string => {
+  // Get font family style
+  function getFontFamilyStyle(font: string): string {
     switch (font) {
       case "inter":
         return "Inter, sans-serif";
@@ -223,73 +241,35 @@ James Clear, one of the world's leading experts on habit formation, reveals prac
       default:
         return "Inter, sans-serif";
     }
-  };
+  }
 
   return (
     <div className="flex flex-col h-full">
-      {isLoading ? (
-        <div className="flex-grow flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-        </div>
-      ) : (
-        <div className="flex-grow overflow-auto p-4">
-          <div
-            className={`prose ${isDarkMode ? "prose-invert" : ""} max-w-none mx-auto`}
-            style={{
-              fontFamily: getFontFamilyStyle(fontFamily),
-              fontSize: `${fontSize}px`,
-              lineHeight: lineSpacing,
-            }}
-          >
-            {content ? (
-              <div>
-                <h2 className="text-xl font-bold mb-4">
-                  EPUB Preview - Page {currentPage} of {totalPages}
-                </h2>
-                <div className="bg-gray-50 dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700 mb-6">
-                  <div
-                    className="whitespace-pre-wrap text-gray-800 dark:text-gray-200"
-                    dangerouslySetInnerHTML={{
-                      __html: content
-                        .split("\n")
-                        .map((line) => {
-                          if (line.startsWith("# ")) {
-                            return `<h1 class="text-2xl font-bold mt-6 mb-4">${line.substring(2)}</h1>`;
-                          } else if (line.startsWith("## ")) {
-                            return `<h2 class="text-xl font-bold mt-5 mb-3">${line.substring(3)}</h2>`;
-                          } else if (line.startsWith("### ")) {
-                            return `<h3 class="text-lg font-bold mt-4 mb-2">${line.substring(4)}</h3>`;
-                          } else if (line.startsWith("- ")) {
-                            return `<li class="ml-4">${line.substring(2)}</li>`;
-                          } else if (
-                            line.startsWith("**") &&
-                            line.endsWith("**")
-                          ) {
-                            return `<p><strong>${line.substring(2, line.length - 2)}</strong></p>`;
-                          } else if (line.trim() === "") {
-                            return "<p>&nbsp;</p>";
-                          } else {
-                            return `<p class="mb-3">${line}</p>`;
-                          }
-                        })
-                        .join(""),
-                    }}
-                  ></div>
-                </div>
-                <div className="flex items-center justify-center mt-8 mb-4 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                  <FileText className="h-6 w-6 text-blue-500 mr-2" />
-                  <p className="text-blue-600 dark:text-blue-400 italic">
-                    This is a simplified preview. For the full EPUB experience,
-                    please download the file.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <p>No content available</p>
-            )}
+      <div className="flex-grow relative">
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 z-10">
+            <div className="flex flex-col items-center">
+              <Loader2 className="h-10 w-10 animate-spin text-blue-500 mb-2" />
+              <p className="text-gray-600">Loading EPUB...</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* EPUB Viewer Container */}
+        <div
+          ref={viewerRef}
+          className="w-full h-full overflow-hidden"
+          style={{
+            backgroundColor: isDarkMode ? "#1a1a1a" : "#ffffff",
+            contain: "content", // Less strict containment to avoid ResizeObserver issues
+            position: "relative", // Create a new stacking context
+            transform: "translateZ(0)", // Force GPU acceleration and create a new stacking context
+            willChange: "transform", // Hint to browser about upcoming changes
+            display: "block", // Ensure block display
+            minHeight: "400px", // Ensure minimum height
+          }}
+        />
+      </div>
 
       <div className="flex items-center justify-between p-4 border-t">
         <Button

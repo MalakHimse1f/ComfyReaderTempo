@@ -164,6 +164,7 @@ export default function DocumentReader({
             // For EPUB files, we'll handle them differently with the EpubReader component
             // Just set a placeholder here, the actual rendering is done in the JSX
             content = "EPUB_CONTENT_PLACEHOLDER";
+            console.log("EPUB file detected, size:", fileData.size, "bytes");
           } else {
             content = `This document type (${fileType}) is currently being viewed in preview mode.`;
           }
@@ -371,6 +372,7 @@ export default function DocumentReader({
               maxWidth: `calc(100% - ${margins * 2}px)`,
               height: "calc(100vh - 200px)",
               backgroundColor: isDarkMode ? "#1a1a1a" : "#ffffff",
+              contain: "layout size", // Improve performance and prevent layout thrashing
             }}
           >
             <EpubReader
