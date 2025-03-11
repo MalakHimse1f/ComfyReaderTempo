@@ -21,6 +21,7 @@ export interface DocumentItem {
   uploadDate: Date;
   thumbnailUrl?: string;
   isOffline?: boolean;
+  readingProgress?: number;
 }
 
 interface DocumentCardProps {
@@ -54,7 +55,14 @@ export default function DocumentCard({
     };
 
     checkOfflineStatus();
-  }, [document.id, document.isOffline]);
+
+    // Log reading progress for debugging
+    if (document.readingProgress) {
+      console.log(
+        `Document ${document.id} has reading progress: ${document.readingProgress}%`,
+      );
+    }
+  }, [document.id, document.isOffline, document.readingProgress]);
 
   // Update local state when document prop changes
   useEffect(() => {
@@ -89,6 +97,22 @@ export default function DocumentCard({
               Uploaded{" "}
               {formatDistanceToNow(document.uploadDate, { addSuffix: true })}
             </span>
+          </div>
+
+          {/* Reading Progress Bar - Always visible for debugging */}
+          <div className="mt-2 max-w-xs">
+            <div className="w-full h-1.5 bg-gray-200 rounded-full">
+              <div
+                className="h-1.5 bg-blue-500 rounded-full"
+                style={{ width: `${document.readingProgress || 0}%` }}
+              />
+            </div>
+            <div className="text-xs text-gray-500 mt-0.5 text-right">
+              {isNaN(document.readingProgress)
+                ? 0
+                : document.readingProgress || 0}
+              % read
+            </div>
           </div>
         </div>
         <div className="flex space-x-2">
@@ -179,6 +203,22 @@ export default function DocumentCard({
           <div>
             Uploaded{" "}
             {formatDistanceToNow(document.uploadDate, { addSuffix: true })}
+          </div>
+        </div>
+
+        {/* Reading Progress Bar - Always visible for debugging */}
+        <div className="mt-2">
+          <div className="w-full h-1.5 bg-gray-200 rounded-full">
+            <div
+              className="h-1.5 bg-blue-500 rounded-full"
+              style={{ width: `${document.readingProgress || 0}%` }}
+            />
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5 text-right">
+            {isNaN(document.readingProgress)
+              ? 0
+              : document.readingProgress || 0}
+            % read
           </div>
         </div>
       </CardContent>

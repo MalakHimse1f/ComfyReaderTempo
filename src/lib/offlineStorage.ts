@@ -9,6 +9,8 @@ export interface OfflineDocument {
   uploadDate: string;
   lastOpened?: string;
   isOffline: boolean;
+  readingProgress?: number;
+  furthestReadPosition?: string;
 }
 
 // Save document for offline access

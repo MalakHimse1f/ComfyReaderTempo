@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { useResizeObserverErrorHandler } from "@/lib/useResizeObserverErrorHandler";
 import {
   FileText,
   Upload,
@@ -13,6 +14,9 @@ import {
 import { useAuth } from "../../../supabase/auth";
 
 export default function LandingPage() {
+  // Apply the ResizeObserver error handler
+  useResizeObserverErrorHandler();
+
   const { user } = useAuth();
 
   return (

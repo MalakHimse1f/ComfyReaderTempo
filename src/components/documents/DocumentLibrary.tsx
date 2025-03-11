@@ -111,16 +111,41 @@ export default function DocumentLibrary({
       const offlineDocuments = await getAllOfflineDocumentMetadata();
       const offlineDocIds = offlineDocuments.map((doc) => doc.id);
 
-      const formattedDocs: DocumentItem[] = data.map((doc) => ({
-        id: doc.id,
-        title: doc.title,
-        fileType: doc.file_type,
-        fileSize: doc.file_size,
-        uploadDate: new Date(doc.created_at),
-        lastOpened: doc.last_opened ? new Date(doc.last_opened) : undefined,
-        thumbnailUrl: doc.thumbnail_url,
-        isOffline: offlineDocIds.includes(doc.id),
-      }));
+      const formattedDocs: DocumentItem[] = data.map((doc) => {
+        // Log the reading progress data for debugging
+        console.log(
+          `Document ${doc.id} reading progress:`,
+          doc.reading_progress,
+        );
+
+        // Parse reading progress, handling different data types
+        let progress = 0;
+        if (doc.reading_progress && doc.reading_progress.progress) {
+          // Handle both number and string formats
+          const progressValue = doc.reading_progress.progress;
+          progress =
+            typeof progressValue === "string"
+              ? parseInt(progressValue)
+              : progressValue;
+
+          // Ensure it's a valid number
+          if (isNaN(progress)) progress = 0;
+
+          console.log(`Parsed progress for ${doc.id}: ${progress}%`);
+        }
+
+        return {
+          id: doc.id,
+          title: doc.title,
+          fileType: doc.file_type,
+          fileSize: doc.file_size,
+          uploadDate: new Date(doc.created_at),
+          lastOpened: doc.last_opened ? new Date(doc.last_opened) : undefined,
+          thumbnailUrl: doc.thumbnail_url,
+          isOffline: offlineDocIds.includes(doc.id),
+          readingProgress: progress,
+        };
+      });
 
       setDocuments(formattedDocs);
     } catch (error) {
@@ -147,6 +172,7 @@ export default function DocumentLibrary({
           uploadDate: new Date(doc.uploadDate),
           lastOpened: doc.lastOpened ? new Date(doc.lastOpened) : undefined,
           isOffline: true,
+          readingProgress: doc.readingProgress || 0,
         }),
       );
 

@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useResizeObserverErrorHandler } from "@/lib/useResizeObserverErrorHandler";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -26,6 +27,7 @@ import {
   Share2,
   Loader2,
   WifiOff,
+  List,
 } from "lucide-react";
 import { supabase } from "../../../supabase/supabase";
 import {
@@ -46,17 +48,27 @@ export default function DocumentReader({
   documentId = null,
   onBack = () => {},
 }: DocumentReaderProps) {
+  // Apply the ResizeObserver error handler
+  useResizeObserverErrorHandler();
   const [isOffline, setIsOffline] = useState(false);
   const [fontSize, setFontSize] = useState(16);
   const [fontFamily, setFontFamily] = useState("inter");
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [lineSpacing, setLineSpacing] = useState(1.5);
   const [margins, setMargins] = useState(16);
+  const [readingProgress, setReadingProgress] = useState(0);
+  const [isTocVisible, setIsTocVisible] = useState(false);
+  const [tableOfContents, setTableOfContents] = useState([]);
 
   // State for document content
   const [documentContent, setDocumentContent] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [fileData, setFileData] = useState<Blob | null>(null);
+  const [textDocumentPosition, setTextDocumentPosition] = useState<number>(0);
+  const [textDocumentLength, setTextDocumentLength] = useState<number>(0);
+
+  // Ref for the EPUB reader component
+  const epubReaderRef = useRef(null);
 
   // Check if document is available offline
   useEffect(() => {
@@ -69,7 +81,55 @@ export default function DocumentReader({
     checkOfflineStatus();
   }, [documentId]);
 
-  // Fetch document content when component mounts
+  // Update reading progress in Supabase when it changes
+  useEffect(() => {
+    const updateReadingProgress = async () => {
+      if (!documentId) return;
+
+      try {
+        // Always update progress even if it's 0
+        console.log(`Saving reading progress to database: ${readingProgress}%`);
+
+        // Convert to string to ensure it's stored properly
+        const progressValue = readingProgress.toString();
+
+        // Update the reading progress in Supabase
+        const { data, error } = await supabase
+          .from("documents")
+          .update({
+            reading_progress: {
+              progress: progressValue,
+              updated_at: new Date().toISOString(),
+            },
+            last_opened: new Date().toISOString(),
+          })
+          .eq("id", documentId)
+          .select();
+
+        if (error) {
+          throw error;
+        }
+
+        console.log(
+          `Successfully updated reading progress: ${readingProgress}% for document ${documentId}`,
+          data,
+        );
+      } catch (error) {
+        console.error("Error updating reading progress:", error);
+      }
+    };
+
+    // Only update if reading progress has a valid value
+    if (readingProgress !== undefined && !isNaN(readingProgress)) {
+      // Debounce the update to avoid too many database calls
+      const timeoutId = setTimeout(() => {
+        updateReadingProgress();
+      }, 1000);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [documentId, readingProgress]);
+
   useEffect(() => {
     const fetchDocumentContent = async () => {
       if (!documentId) {
@@ -157,6 +217,58 @@ export default function DocumentReader({
           if (fileType.toLowerCase() === "txt" || !fileType) {
             content = await fileData.text();
             console.log(`Text content length: ${content.length} characters`);
+
+            // Set text document length for progress calculation
+            setTextDocumentLength(content.length);
+
+            // Check if we have a saved position for this document
+            const savedPosition = localStorage.getItem(
+              `txt-position-${documentId}`,
+            );
+            if (savedPosition) {
+              setTextDocumentPosition(parseInt(savedPosition));
+
+              // Calculate and set initial reading progress
+              const progress = Math.min(
+                Math.round((parseInt(savedPosition) / content.length) * 100),
+                100,
+              );
+              setReadingProgress(progress);
+              console.log(`Restored reading progress: ${progress}%`);
+            } else {
+              // Force an initial progress calculation after content loads
+              setTimeout(() => {
+                // Get the main content element
+                const contentElements = document.querySelectorAll(".prose");
+                if (contentElements.length > 0) {
+                  const el = contentElements[0];
+                  const scrollPosition = el.scrollTop;
+                  const scrollHeight = el.scrollHeight;
+                  const clientHeight = el.clientHeight;
+
+                  // Calculate initial progress
+                  let scrollPercentage = 0;
+                  if (scrollHeight > clientHeight) {
+                    scrollPercentage = Math.min(
+                      Math.round(
+                        (scrollPosition / (scrollHeight - clientHeight)) * 100,
+                      ),
+                      100,
+                    );
+                  }
+
+                  // Force a minimum progress of 1 if document is loaded
+                  if (scrollPercentage === 0) {
+                    scrollPercentage = 1;
+                  }
+
+                  console.log(
+                    `Initial scroll calculation: ${scrollPercentage}%`,
+                  );
+                  setReadingProgress(scrollPercentage);
+                }
+              }, 1000);
+            }
           } else if (fileType.toLowerCase() === "pdf") {
             content =
               "PDF content is being processed. This feature is coming soon.";
@@ -215,10 +327,35 @@ export default function DocumentReader({
             <h1 className="ml-2 font-medium truncate">{documentTitle}</h1>
           </div>
 
+          {/* Display current chapter for EPUBs */}
+          {documentContent === "EPUB_CONTENT_PLACEHOLDER" &&
+            epubReaderRef.current && (
+              <div className="text-sm text-gray-500 hidden md:block max-w-xs truncate">
+                {epubReaderRef.current?.getCurrentChapter() || ""}
+              </div>
+            )}
+
           <div className="flex items-center space-x-2">
             <Button variant="ghost" size="icon" title="Bookmark">
               <Bookmark className="h-5 w-5" />
             </Button>
+
+            {/* TOC button for EPUB files */}
+            {documentContent === "EPUB_CONTENT_PLACEHOLDER" && fileData && (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Table of Contents"
+                onClick={() => {
+                  if (epubReaderRef.current) {
+                    epubReaderRef.current.toggleToc();
+                  }
+                }}
+              >
+                <List className="h-5 w-5" />
+              </Button>
+            )}
+
             {isOffline ? (
               <Button variant="ghost" size="icon" title="Available Offline">
                 <WifiOff className="h-5 w-5 text-blue-500" />
@@ -258,6 +395,7 @@ export default function DocumentReader({
                       uploadDate: new Date().toISOString(),
                       lastOpened: new Date().toISOString(),
                       isOffline: true,
+                      readingProgress: readingProgress,
                     });
 
                     // Show success message
@@ -376,11 +514,16 @@ export default function DocumentReader({
             }}
           >
             <EpubReader
+              ref={epubReaderRef}
               url={fileData}
               fontFamily={fontFamily}
               fontSize={fontSize}
               lineSpacing={lineSpacing}
               isDarkMode={isDarkMode}
+              onProgressChange={(progress) => {
+                console.log(`Progress from EPUB reader: ${progress}%`);
+                setReadingProgress(progress);
+              }}
             />
           </div>
         ) : (
@@ -399,6 +542,69 @@ export default function DocumentReader({
               lineHeight: lineSpacing,
               padding: `0 ${margins}px`,
               maxWidth: `calc(100% - ${margins * 2}px)`,
+            }}
+            ref={(el) => {
+              // Set up scroll event listener when element is mounted
+              if (
+                el &&
+                documentContent &&
+                documentContent !== fallbackContent &&
+                documentContent !== "EPUB_CONTENT_PLACEHOLDER"
+              ) {
+                // Add scroll event listener
+                const handleScroll = () => {
+                  const scrollPosition = el.scrollTop;
+                  const scrollHeight = el.scrollHeight;
+                  const clientHeight = el.clientHeight;
+
+                  // Calculate how far through the document we've scrolled
+                  let scrollPercentage = 0;
+                  if (scrollHeight > clientHeight) {
+                    scrollPercentage = Math.min(
+                      Math.round(
+                        (scrollPosition / (scrollHeight - clientHeight)) * 100,
+                      ),
+                      100,
+                    );
+                  }
+
+                  // Force a minimum progress of 1 if any scrolling has happened
+                  if (scrollPosition > 0 && scrollPercentage === 0) {
+                    scrollPercentage = 1;
+                  }
+
+                  console.log(
+                    `Scroll position: ${scrollPosition}/${scrollHeight}, Progress: ${scrollPercentage}%`,
+                  );
+
+                  // Update reading progress
+                  setReadingProgress(scrollPercentage);
+
+                  // Store the current position
+                  if (documentId) {
+                    // Calculate approximate character position based on scroll percentage
+                    const approxPosition = Math.round(
+                      (scrollPercentage / 100) * textDocumentLength,
+                    );
+                    setTextDocumentPosition(approxPosition);
+                    localStorage.setItem(
+                      `txt-position-${documentId}`,
+                      approxPosition.toString(),
+                    );
+                  }
+                };
+
+                // Initial calculation when content loads
+                setTimeout(handleScroll, 500);
+
+                // Add event listener
+                el.addEventListener("scroll", handleScroll);
+
+                // Clean up function will be called when component unmounts
+                return () => {
+                  el.removeEventListener("scroll", handleScroll);
+                };
+              }
             }}
           >
             {/* Actual document content */}
@@ -420,6 +626,23 @@ export default function DocumentReader({
                   .join(""),
               }}
             />
+
+            {/* Reading progress indicator for text documents */}
+            {documentContent &&
+              documentContent !== fallbackContent &&
+              documentContent !== "EPUB_CONTENT_PLACEHOLDER" && (
+                <div className="fixed bottom-4 right-4 bg-white dark:bg-gray-800 shadow-md rounded-lg p-2 text-sm">
+                  <div className="w-32 h-1.5 bg-gray-200 rounded-full mb-1">
+                    <div
+                      className="h-1.5 bg-blue-500 rounded-full"
+                      style={{ width: `${readingProgress}%` }}
+                    />
+                  </div>
+                  <div className="text-xs text-gray-500 text-right">
+                    {isNaN(readingProgress) ? 0 : readingProgress}% read
+                  </div>
+                </div>
+              )}
           </div>
         )}
       </main>
