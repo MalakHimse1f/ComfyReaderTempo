@@ -68,64 +68,6 @@ ComfyReaderTempo is a modern web application built with React and TypeScript tha
 └── netlify.toml         # Netlify deployment configuration
 ```
 
-## File Descriptions
-
-### Source Files (`src/`)
-
-#### Core Files
-
-- **App.tsx**: The root component that sets up routing and wraps the application with authentication provider.
-- **main.tsx**: The entry point that renders the App component into the DOM and sets up React Router.
-- **index.css**: Global CSS styles and Tailwind directives.
-- **vite-env.d.ts**: TypeScript declarations for Vite environment variables.
-
-#### Components (`src/components/`)
-
-##### Authentication Components (`src/components/auth/`)
-
-- **LoginForm.tsx**: Handles user login with email and password.
-- **SignUpForm.tsx**: Manages new user registration with form validation.
-- **AuthLayout.tsx**: Provides consistent layout for authentication pages.
-
-##### Dashboard Components (`src/components/dashboard/`)
-
-- **layout/TopNavigation.tsx**: The top navigation bar with user profile, notifications, and search.
-- **layout/Sidebar.tsx**: Side navigation with links to main application sections.
-
-##### Document Components (`src/components/documents/`)
-
-- **DocumentLibrary.tsx**: Main document management interface with grid/list views and search.
-- **DocumentCard.tsx**: Card component displaying document metadata and actions.
-- **DocumentReader.tsx**: Document viewing interface with customization options.
-- **DocumentUpload.tsx**: Handles document upload functionality.
-
-##### Page Components (`src/components/pages/`)
-
-- **dashboard.tsx**: Main dashboard page that integrates document library and reader.
-- **landing.tsx**: Public landing page for unauthenticated users.
-- **success.tsx**: Success page shown after completing certain actions.
-
-##### UI Components (`src/components/ui/`)
-
-- Various reusable UI components from shadcn/ui library (buttons, cards, inputs, etc.).
-
-#### Libraries and Utilities (`src/lib/`)
-
-- Utility functions and shared logic used across the application.
-
-#### Type Definitions (`src/types/`)
-
-- **supabase.ts**: TypeScript types generated from Supabase schema.
-- Other type definitions for the application.
-
-### Supabase Integration (`supabase/`)
-
-- **auth.tsx**: Authentication provider that manages user state and auth methods.
-- **supabase.ts**: Client initialization for Supabase with environment variables.
-- **config.toml**: Configuration for Supabase CLI.
-- **migrations/**: Database migration files for Supabase.
-- **functions/**: Supabase Edge Functions for server-side logic.
-
 ## Current State
 
 The application currently features:

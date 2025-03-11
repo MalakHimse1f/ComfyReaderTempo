@@ -37,7 +37,7 @@ const EpubReader = ({
 
             // Check if the content appears to be binary/encoded EPUB content
             const isBinaryContent = /[\x00-\x08\x0E-\x1F\x80-\xFF]/.test(
-              text.substring(0, 1000),
+              text.substring(0, 1000)
             );
 
             let formattedText = text;
@@ -50,7 +50,11 @@ This EPUB file contains binary content that cannot be displayed directly.
 
 ## Book Information
 
-${url instanceof Blob ? `File size: ${(url.size / 1024).toFixed(2)} KB` : "Remote EPUB file"}
+${
+  url instanceof Blob
+    ? `File size: ${(url.size / 1024).toFixed(2)} KB`
+    : "Remote EPUB file"
+}
 
 EPUB files contain formatted text, images, and other media. For the best reading experience, please download this file and open it with an EPUB reader application.
 
@@ -90,12 +94,12 @@ James Clear, one of the world's leading experts on habit formation, reveals prac
             // Get content for current page
             setContent(formattedText.substring(startIndex, endIndex));
             setTotalPages(
-              Math.max(1, Math.ceil(formattedText.length / pageSize)),
+              Math.max(1, Math.ceil(formattedText.length / pageSize))
             );
           } catch (err) {
             console.error("Error reading EPUB content:", err);
             setContent(
-              "# Unable to Display EPUB Content\n\nThis EPUB file cannot be displayed in the current view. Please download the file to read it in a dedicated EPUB reader.\n\n## Recommended EPUB Readers\n\n- **Calibre** (Windows, macOS, Linux)\n- **Apple Books** (iOS, macOS)\n- **Google Play Books** (Android, Web)\n- **Kobo** (iOS, Android)\n- **Adobe Digital Editions** (Windows, macOS)",
+              "# Unable to Display EPUB Content\n\nThis EPUB file cannot be displayed in the current view. Please download the file to read it in a dedicated EPUB reader.\n\n## Recommended EPUB Readers\n\n- **Calibre** (Windows, macOS, Linux)\n- **Apple Books** (iOS, macOS)\n- **Google Play Books** (Android, Web)\n- **Kobo** (iOS, Android)\n- **Adobe Digital Editions** (Windows, macOS)"
             );
           }
         } else if (typeof url === "string") {
@@ -106,7 +110,7 @@ James Clear, one of the world's leading experts on habit formation, reveals prac
 
             // Check if the content appears to be binary/encoded EPUB content
             const isBinaryContent = /[\x00-\x08\x0E-\x1F\x80-\xFF]/.test(
-              text.substring(0, 1000),
+              text.substring(0, 1000)
             );
 
             let formattedText = text;
@@ -119,7 +123,7 @@ This EPUB file contains binary content that cannot be displayed directly.
 
 ## Book Information
 
-${url instanceof Blob ? `File size: ${(url.size / 1024).toFixed(2)} KB` : "Remote EPUB file"}
+Remote EPUB file
 
 EPUB files contain formatted text, images, and other media. For the best reading experience, please download this file and open it with an EPUB reader application.
 
@@ -159,19 +163,19 @@ James Clear, one of the world's leading experts on habit formation, reveals prac
             // Get content for current page
             setContent(formattedText.substring(startIndex, endIndex));
             setTotalPages(
-              Math.max(1, Math.ceil(formattedText.length / pageSize)),
+              Math.max(1, Math.ceil(formattedText.length / pageSize))
             );
           } catch (err) {
             console.error("Error fetching EPUB content:", err);
             setContent(
-              "# Unable to Display EPUB Content\n\nThis EPUB file cannot be displayed in the current view. Please download the file to read it in a dedicated EPUB reader.\n\n## Recommended EPUB Readers\n\n- **Calibre** (Windows, macOS, Linux)\n- **Apple Books** (iOS, macOS)\n- **Google Play Books** (Android, Web)\n- **Kobo** (iOS, Android)\n- **Adobe Digital Editions** (Windows, macOS)",
+              "# Unable to Display EPUB Content\n\nThis EPUB file cannot be displayed in the current view. Please download the file to read it in a dedicated EPUB reader.\n\n## Recommended EPUB Readers\n\n- **Calibre** (Windows, macOS, Linux)\n- **Apple Books** (iOS, macOS)\n- **Google Play Books** (Android, Web)\n- **Kobo** (iOS, Android)\n- **Adobe Digital Editions** (Windows, macOS)"
             );
           }
         }
       } catch (err) {
         console.error("Error processing EPUB:", err);
         setError(
-          "Unable to process this EPUB file. Please try downloading it instead.",
+          "Unable to process this EPUB file. Please try downloading it instead."
         );
       } finally {
         setIsLoading(false);
@@ -234,7 +238,9 @@ James Clear, one of the world's leading experts on habit formation, reveals prac
       ) : (
         <div className="flex-grow overflow-auto p-4">
           <div
-            className={`prose ${isDarkMode ? "prose-invert" : ""} max-w-none mx-auto`}
+            className={`prose ${
+              isDarkMode ? "prose-invert" : ""
+            } max-w-none mx-auto`}
             style={{
               fontFamily: getFontFamilyStyle(fontFamily),
               fontSize: `${fontSize}px`,
@@ -254,18 +260,27 @@ James Clear, one of the world's leading experts on habit formation, reveals prac
                         .split("\n")
                         .map((line) => {
                           if (line.startsWith("# ")) {
-                            return `<h1 class="text-2xl font-bold mt-6 mb-4">${line.substring(2)}</h1>`;
+                            return `<h1 class="text-2xl font-bold mt-6 mb-4">${line.substring(
+                              2
+                            )}</h1>`;
                           } else if (line.startsWith("## ")) {
-                            return `<h2 class="text-xl font-bold mt-5 mb-3">${line.substring(3)}</h2>`;
+                            return `<h2 class="text-xl font-bold mt-5 mb-3">${line.substring(
+                              3
+                            )}</h2>`;
                           } else if (line.startsWith("### ")) {
-                            return `<h3 class="text-lg font-bold mt-4 mb-2">${line.substring(4)}</h3>`;
+                            return `<h3 class="text-lg font-bold mt-4 mb-2">${line.substring(
+                              4
+                            )}</h3>`;
                           } else if (line.startsWith("- ")) {
                             return `<li class="ml-4">${line.substring(2)}</li>`;
                           } else if (
                             line.startsWith("**") &&
                             line.endsWith("**")
                           ) {
-                            return `<p><strong>${line.substring(2, line.length - 2)}</strong></p>`;
+                            return `<p><strong>${line.substring(
+                              2,
+                              line.length - 2
+                            )}</strong></p>`;
                           } else if (line.trim() === "") {
                             return "<p>&nbsp;</p>";
                           } else {

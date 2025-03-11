@@ -4,6 +4,9 @@ import { Upload, X, FileText } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { supabase } from "../../../supabase/supabase";
 
+// Import SUPABASE_URL from environment variables
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
+
 interface DocumentUploadProps {
   onUploadComplete: (file: File) => void;
 }
@@ -83,24 +86,24 @@ export default function DocumentUpload({
 
       // Log auth info for debugging (without exposing the full token)
       console.log(`Auth token available: ${token ? "Yes" : "No"}`);
-      console.log(`Supabase URL: ${supabase.supabaseUrl}`);
+      console.log(`Supabase URL: ${SUPABASE_URL}`);
 
       setUploadProgress(50);
 
       // Log the URL we're trying to fetch for debugging
       console.log(
-        `Attempting to fetch: ${supabase.supabaseUrl}/functions/v1/upload-document`,
+        `Attempting to fetch: ${SUPABASE_URL}/functions/v1/upload-document`
       );
 
       const response = await fetch(
-        `${supabase.supabaseUrl}/functions/v1/upload-document`,
+        `${SUPABASE_URL}/functions/v1/upload-document`,
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
           },
           body: formData,
-        },
+        }
       );
 
       setUploadProgress(80);
@@ -215,7 +218,9 @@ export default function DocumentUpload({
 
       {!selectedFile ? (
         <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center ${isDragging ? "border-blue-500 bg-blue-50" : "border-gray-300"}`}
+          className={`border-2 border-dashed rounded-lg p-8 text-center ${
+            isDragging ? "border-blue-500 bg-blue-50" : "border-gray-300"
+          }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
