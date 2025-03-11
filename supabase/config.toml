@@ -1,0 +1,10 @@
+# Edge Functions configuration
+[functions]
+[functions.payments-webhook]
+verify_jwt = false
+
+[functions.create-checkout]
+verify_jwt = true
+
+[functions.get-plans]
+verify_jwt = false

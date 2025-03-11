@@ -1,0 +1,1 @@
+-- This migration has been intentionally left empty to avoid conflicts with existing users
