@@ -9,10 +9,10 @@ import { useAuth } from "../../../supabase/auth";
 
 const Dashboard = () => {
   const [currentView, setCurrentView] = useState<"library" | "reader">(
-    "library",
+    "library"
   );
   const [currentDocumentId, setCurrentDocumentId] = useState<string | null>(
-    null,
+    null
   );
   const [documentTitle, setDocumentTitle] = useState<string>("");
   const location = useLocation();
@@ -54,9 +54,10 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-white">
-      <TopNavigation />
+      {/* Only show TopNavigation in library view */}
+      {currentView === "library" && <TopNavigation />}
 
-      <div className="flex pt-16">
+      <div className={`flex ${currentView === "library" ? "pt-16" : "pt-0"}`}>
         {/* Only show sidebar in library view, and force collapse in reader view */}
         {currentView === "library" ? (
           <Sidebar
