@@ -1,7 +1,16 @@
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileText, Download, Trash2, ExternalLink } from "lucide-react";
+import {
+  FileText,
+  Download,
+  Trash2,
+  ExternalLink,
+  WifiOff,
+  Check,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useState, useEffect } from "react";
+import { isDocumentAvailableOffline } from "@/lib/offlineStorage";
 
 export interface DocumentItem {
   id: string;
@@ -11,6 +20,7 @@ export interface DocumentItem {
   lastOpened?: Date;
   uploadDate: Date;
   thumbnailUrl?: string;
+  isOffline?: boolean;
 }
 
 interface DocumentCardProps {
@@ -19,6 +29,8 @@ interface DocumentCardProps {
   onDownload: (doc: DocumentItem) => void;
   onDelete: (doc: DocumentItem) => void;
   view?: "grid" | "list";
+  downloadProgress?: number;
+  isDownloading?: boolean;
 }
 
 export default function DocumentCard({
@@ -27,7 +39,27 @@ export default function DocumentCard({
   onDownload,
   onDelete,
   view = "grid",
+  downloadProgress = 0,
+  isDownloading = false,
 }: DocumentCardProps) {
+  const [isOffline, setIsOffline] = useState<boolean>(
+    document.isOffline || false,
+  );
+
+  // Check if document is available offline
+  useEffect(() => {
+    const checkOfflineStatus = async () => {
+      const offlineStatus = await isDocumentAvailableOffline(document.id);
+      setIsOffline(offlineStatus);
+    };
+
+    checkOfflineStatus();
+  }, [document.id, document.isOffline]);
+
+  // Update local state when document prop changes
+  useEffect(() => {
+    setIsOffline(document.isOffline || false);
+  }, [document.isOffline]);
   const getFileIcon = () => {
     switch (document.fileType.toLowerCase()) {
       case "pdf":
@@ -37,6 +69,8 @@ export default function DocumentCard({
         return <FileText className="h-12 w-12 text-blue-500" />;
       case "txt":
         return <FileText className="h-12 w-12 text-gray-500" />;
+      case "epub":
+        return <FileText className="h-12 w-12 text-green-500" />;
       default:
         return <FileText className="h-12 w-12 text-gray-500" />;
     }
@@ -66,14 +100,45 @@ export default function DocumentCard({
           >
             <ExternalLink className="h-5 w-5" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onDownload(document)}
-            title="Download"
-          >
-            <Download className="h-5 w-5" />
-          </Button>
+          {isDownloading ? (
+            <div className="relative h-9 w-9 flex items-center justify-center">
+              <svg className="h-9 w-9 absolute" viewBox="0 0 36 36">
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="16"
+                  fill="none"
+                  className="stroke-gray-200"
+                  strokeWidth="2"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="16"
+                  fill="none"
+                  className="stroke-blue-500"
+                  strokeWidth="2"
+                  strokeDasharray="100"
+                  strokeDashoffset={100 - downloadProgress}
+                  transform="rotate(-90 18 18)"
+                />
+              </svg>
+              <span className="text-xs font-medium">{downloadProgress}%</span>
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onDownload(document)}
+              title={isOffline ? "Remove from Offline" : "Save for Offline"}
+            >
+              {isOffline ? (
+                <WifiOff className="h-5 w-5 text-blue-500" />
+              ) : (
+                <Download className="h-5 w-5" />
+              )}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -122,14 +187,45 @@ export default function DocumentCard({
           Open
         </Button>
         <div className="flex space-x-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onDownload(document)}
-            title="Download"
-          >
-            <Download className="h-4 w-4" />
-          </Button>
+          {isDownloading ? (
+            <div className="relative h-8 w-8 flex items-center justify-center">
+              <svg className="h-8 w-8 absolute" viewBox="0 0 32 32">
+                <circle
+                  cx="16"
+                  cy="16"
+                  r="14"
+                  fill="none"
+                  className="stroke-gray-200"
+                  strokeWidth="2"
+                />
+                <circle
+                  cx="16"
+                  cy="16"
+                  r="14"
+                  fill="none"
+                  className="stroke-blue-500"
+                  strokeWidth="2"
+                  strokeDasharray="100"
+                  strokeDashoffset={100 - downloadProgress}
+                  transform="rotate(-90 16 16)"
+                />
+              </svg>
+              <span className="text-xs font-medium">{downloadProgress}%</span>
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onDownload(document)}
+              title={isOffline ? "Remove from Offline" : "Save for Offline"}
+            >
+              {isOffline ? (
+                <WifiOff className="h-4 w-4 text-blue-500" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"

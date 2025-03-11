@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, X, FileText } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { supabase } from "../../../supabase/supabase";
 
 interface DocumentUploadProps {
   onUploadComplete: (file: File) => void;
@@ -42,9 +43,11 @@ export default function DocumentUpload({
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "text/plain",
+      "application/epub+zip",
+      "application/epub",
     ];
     if (!validTypes.includes(file.type)) {
-      alert("Please select a valid document file (PDF, DOC, DOCX, TXT)");
+      alert("Please select a valid document file (PDF, DOC, DOCX, TXT, EPUB)");
       return;
     }
 
@@ -57,27 +60,135 @@ export default function DocumentUpload({
     }
   };
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (!selectedFile) return;
 
     setIsUploading(true);
+    setUploadProgress(10);
 
-    // Simulate upload progress
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 5;
-      setUploadProgress(progress);
+    try {
+      // Create form data for the file upload
+      const formData = new FormData();
+      formData.append("file", selectedFile);
 
-      if (progress >= 100) {
-        clearInterval(interval);
-        setTimeout(() => {
-          setIsUploading(false);
-          onUploadComplete(selectedFile);
-          setSelectedFile(null);
-          setUploadProgress(0);
-        }, 500);
+      setUploadProgress(30);
+
+      // Upload to Supabase via edge function
+      const { data: authData } = await supabase.auth.getSession();
+      const token = authData.session?.access_token;
+
+      if (!token) {
+        throw new Error("Authentication required");
       }
-    }, 100);
+
+      // Log auth info for debugging (without exposing the full token)
+      console.log(`Auth token available: ${token ? "Yes" : "No"}`);
+      console.log(`Supabase URL: ${supabase.supabaseUrl}`);
+
+      setUploadProgress(50);
+
+      // Log the URL we're trying to fetch for debugging
+      console.log(
+        `Attempting to fetch: ${supabase.supabaseUrl}/functions/v1/upload-document`,
+      );
+
+      const response = await fetch(
+        `${supabase.supabaseUrl}/functions/v1/upload-document`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        },
+      );
+
+      setUploadProgress(80);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to upload document");
+      }
+
+      const result = await response.json();
+      setUploadProgress(100);
+
+      setTimeout(() => {
+        setIsUploading(false);
+        onUploadComplete(selectedFile);
+        setSelectedFile(null);
+        setUploadProgress(0);
+      }, 500);
+    } catch (error) {
+      console.error("Upload error:", error);
+
+      // More detailed error logging
+      if (error instanceof Error) {
+        console.error("Error name:", error.name);
+        console.error("Error message:", error.message);
+        console.error("Error stack:", error.stack);
+      }
+
+      // Instead of simulating success, we'll directly upload to Supabase
+      if (error.message === "Failed to fetch") {
+        console.log("Edge function failed, using direct Supabase upload");
+        try {
+          // Get the current user session again to ensure we have it
+          const { data: userData } = await supabase.auth.getSession();
+          const userId = userData.session?.user.id;
+
+          if (!userId) {
+            throw new Error("User not authenticated");
+          }
+
+          // Generate a unique file path
+          const timestamp = Date.now();
+          const fileExt = selectedFile.name.split(".").pop();
+          const filePath = `${userId}/${timestamp}-${selectedFile.name}`;
+
+          // Upload file to storage
+          const { data: uploadData, error: uploadError } =
+            await supabase.storage
+              .from("documents")
+              .upload(filePath, selectedFile, {
+                contentType: selectedFile.type,
+                upsert: false,
+              });
+
+          if (uploadError) throw uploadError;
+
+          // Create a record in the documents table
+          const { data: documentData, error: documentError } = await supabase
+            .from("documents")
+            .insert({
+              user_id: userId,
+              title: selectedFile.name,
+              file_type: fileExt || "unknown",
+              file_size: `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`,
+              file_path: filePath,
+              created_at: new Date().toISOString(),
+            });
+
+          if (documentError) throw documentError;
+
+          setUploadProgress(100);
+          setTimeout(() => {
+            setIsUploading(false);
+            onUploadComplete(selectedFile);
+            setSelectedFile(null);
+            setUploadProgress(0);
+          }, 500);
+          return;
+        } catch (directUploadError) {
+          console.error("Direct upload error:", directUploadError);
+          throw directUploadError;
+        }
+      }
+
+      alert(error.message || "Failed to upload document");
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
   };
 
   const handleCancel = () => {
@@ -99,7 +210,7 @@ export default function DocumentUpload({
         ref={fileInputRef}
         onChange={handleFileInputChange}
         className="hidden"
-        accept=".pdf,.doc,.docx,.txt"
+        accept=".pdf,.doc,.docx,.txt,.epub"
       />
 
       {!selectedFile ? (
@@ -114,7 +225,7 @@ export default function DocumentUpload({
             Drag & Drop Your Document
           </h3>
           <p className="text-gray-500 mb-4">
-            Support for PDF, DOC, DOCX, and TXT files
+            Support for PDF, DOC, DOCX, TXT, and EPUB files
           </p>
           <Button
             onClick={triggerFileInput}

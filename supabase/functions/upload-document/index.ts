@@ -48,17 +48,19 @@ serve(async (req) => {
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "text/plain",
+      "application/epub+zip",
+      "application/epub",
     ];
     if (!validTypes.includes(file.type)) {
       throw new Error(
-        "Invalid file type. Only PDF, DOC, DOCX, and TXT files are allowed.",
+        "Invalid file type. Only PDF, DOC, DOCX, TXT, and EPUB files are allowed.",
       );
     }
 
     // Generate a unique file path
     const timestamp = Date.now();
     const fileExt = file.name.split(".").pop();
-    const filePath = `documents/${user.id}/${timestamp}-${file.name}`;
+    const filePath = `${user.id}/${timestamp}-${file.name}`;
 
     // Upload file to storage
     const { data: uploadData, error: uploadError } =

@@ -1,5 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { supabase } from "../../../supabase/supabase";
+import { useAuth } from "../../../supabase/auth";
+import {
+  saveDocumentOffline,
+  removeDocumentOffline,
+  getAllOfflineDocumentMetadata,
+} from "@/lib/offlineStorage";
 import {
   Dialog,
   DialogContent,
@@ -21,85 +28,406 @@ import { Input } from "@/components/ui/input";
 import DocumentCard, { DocumentItem } from "./DocumentCard";
 import DocumentUpload from "./DocumentUpload";
 
-// Sample document data
-const sampleDocuments: DocumentItem[] = [
-  {
-    id: "1",
-    title: "Project Proposal.pdf",
-    fileType: "pdf",
-    fileSize: "2.4 MB",
-    uploadDate: new Date(2023, 5, 15),
-    lastOpened: new Date(2023, 6, 2),
-  },
-  {
-    id: "2",
-    title: "Meeting Notes.docx",
-    fileType: "docx",
-    fileSize: "1.2 MB",
-    uploadDate: new Date(2023, 6, 10),
-  },
-  {
-    id: "3",
-    title: "Research Paper.pdf",
-    fileType: "pdf",
-    fileSize: "3.8 MB",
-    uploadDate: new Date(2023, 4, 28),
-    lastOpened: new Date(2023, 5, 30),
-  },
-  {
-    id: "4",
-    title: "Reading List.txt",
-    fileType: "txt",
-    fileSize: "0.1 MB",
-    uploadDate: new Date(2023, 6, 5),
-  },
-];
+interface DocumentLibraryProps {
+  activeFilter?: string | null;
+}
 
-export default function DocumentLibrary() {
-  const [documents, setDocuments] = useState<DocumentItem[]>(sampleDocuments);
+export default function DocumentLibrary({
+  activeFilter,
+}: DocumentLibraryProps) {
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<DocumentItem | null>(
     null,
   );
-
-  const filteredDocuments = documents.filter((doc) =>
-    doc.title.toLowerCase().includes(searchQuery.toLowerCase()),
+  const [localFilter, setLocalFilter] = useState<string | null>(
+    activeFilter || null,
   );
 
-  const handleOpenDocument = (doc: DocumentItem) => {
-    console.log("Opening document:", doc);
-    // This would navigate to the document reader view
+  // State for tracking download progress
+  const [downloadProgress, setDownloadProgress] = useState<{
+    [key: string]: number;
+  }>({});
+  const [isDownloading, setIsDownloading] = useState<{
+    [key: string]: boolean;
+  }>({});
+
+  // Update local filter when prop changes
+  useEffect(() => {
+    setLocalFilter(activeFilter || null);
+  }, [activeFilter]);
+
+  const filteredDocuments = documents.filter((doc) => {
+    // Apply search filter
+    const matchesSearch = doc.title
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
+
+    // Apply active filter
+    if (localFilter === "Offline") {
+      return matchesSearch && doc.isOffline === true;
+    } else if (localFilter === "Favorites") {
+      // Implement favorites filter when that feature is added
+      return matchesSearch;
+    } else if (localFilter === "PDF Files") {
+      return matchesSearch && doc.fileType.toLowerCase() === "pdf";
+    } else if (localFilter === "Text Files") {
+      return matchesSearch && doc.fileType.toLowerCase() === "txt";
+    }
+
+    return matchesSearch;
+  });
+
+  // Fetch documents from Supabase and merge with offline documents
+  useEffect(() => {
+    if (user) {
+      fetchDocuments();
+    }
+  }, [user]);
+
+  // Update documents when filter changes
+  useEffect(() => {
+    if (localFilter === "Offline") {
+      fetchOfflineDocuments();
+    }
+  }, [localFilter]);
+
+  const fetchDocuments = async () => {
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from("documents")
+        .select("*")
+        .eq("user_id", user?.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      // Get offline documents to merge with online documents
+      const offlineDocuments = await getAllOfflineDocumentMetadata();
+      const offlineDocIds = offlineDocuments.map((doc) => doc.id);
+
+      const formattedDocs: DocumentItem[] = data.map((doc) => ({
+        id: doc.id,
+        title: doc.title,
+        fileType: doc.file_type,
+        fileSize: doc.file_size,
+        uploadDate: new Date(doc.created_at),
+        lastOpened: doc.last_opened ? new Date(doc.last_opened) : undefined,
+        thumbnailUrl: doc.thumbnail_url,
+        isOffline: offlineDocIds.includes(doc.id),
+      }));
+
+      setDocuments(formattedDocs);
+    } catch (error) {
+      console.error("Error fetching documents:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDownloadDocument = (doc: DocumentItem) => {
-    console.log("Downloading document:", doc);
-    // This would trigger the document download
+  const fetchOfflineDocuments = async () => {
+    try {
+      setIsLoading(true);
+
+      // Get all offline documents
+      const offlineDocuments = await getAllOfflineDocumentMetadata();
+
+      // Convert to DocumentItem format
+      const formattedOfflineDocs: DocumentItem[] = offlineDocuments.map(
+        (doc) => ({
+          id: doc.id,
+          title: doc.title,
+          fileType: doc.fileType,
+          fileSize: doc.fileSize,
+          uploadDate: new Date(doc.uploadDate),
+          lastOpened: doc.lastOpened ? new Date(doc.lastOpened) : undefined,
+          isOffline: true,
+        }),
+      );
+
+      // If we're in offline filter mode, only show offline docs
+      if (localFilter === "Offline") {
+        setDocuments(formattedOfflineDocs);
+      } else {
+        // Otherwise, merge with existing documents
+        const existingDocIds = documents.map((doc) => doc.id);
+        const newOfflineDocs = formattedOfflineDocs.filter(
+          (doc) => !existingDocIds.includes(doc.id),
+        );
+
+        setDocuments((prev) => [...prev, ...newOfflineDocs]);
+      }
+    } catch (error) {
+      console.error("Error fetching offline documents:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOpenDocument = async (doc: DocumentItem) => {
+    try {
+      // Check if document is available offline
+      if (doc.isOffline) {
+        // For offline documents, just navigate without updating the server
+        window.location.href = `/dashboard?view=reader&id=${doc.id}`;
+        return;
+      }
+
+      // For online documents, update last_opened timestamp
+      await supabase
+        .from("documents")
+        .update({ last_opened: new Date().toISOString() })
+        .eq("id", doc.id);
+
+      // Navigate to document reader view
+      window.location.href = `/dashboard?view=reader&id=${doc.id}`;
+    } catch (error) {
+      console.error("Error opening document:", error);
+      // Navigate anyway even if the update fails
+      window.location.href = `/dashboard?view=reader&id=${doc.id}`;
+    }
+  };
+
+  const handleDownloadDocument = async (doc: DocumentItem) => {
+    try {
+      // Check if document is already available offline
+      if (doc.isOffline) {
+        // Set downloading state for this document
+        setIsDownloading((prev) => ({ ...prev, [doc.id]: true }));
+        setDownloadProgress((prev) => ({ ...prev, [doc.id]: 10 }));
+
+        try {
+          // Remove from offline storage
+          await removeDocumentOffline(doc.id);
+          setDownloadProgress((prev) => ({ ...prev, [doc.id]: 100 }));
+
+          // Update document in state immediately
+          setDocuments((prev) =>
+            prev.map((d) => (d.id === doc.id ? { ...d, isOffline: false } : d)),
+          );
+
+          // After a short delay, reset the download indicators
+          setTimeout(() => {
+            setIsDownloading((prev) => ({ ...prev, [doc.id]: false }));
+            setDownloadProgress((prev) => ({ ...prev, [doc.id]: 0 }));
+          }, 500);
+        } catch (error) {
+          console.error("Error removing offline document:", error);
+          setIsDownloading((prev) => ({ ...prev, [doc.id]: false }));
+          setDownloadProgress((prev) => ({ ...prev, [doc.id]: 0 }));
+          throw error;
+        }
+        return;
+      }
+
+      // Set downloading state for this document
+      setIsDownloading((prev) => ({ ...prev, [doc.id]: true }));
+      setDownloadProgress((prev) => ({ ...prev, [doc.id]: 10 }));
+
+      try {
+        // Get the document record to find the file path
+        const { data, error } = await supabase
+          .from("documents")
+          .select("file_path")
+          .eq("id", doc.id)
+          .single();
+
+        if (error) throw error;
+        setDownloadProgress((prev) => ({ ...prev, [doc.id]: 30 }));
+
+        // This code path should never be executed
+        if (false) {
+          // Simulate download delay
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          setDownloadProgress((prev) => ({ ...prev, [doc.id]: 70 }));
+
+          // This code path should never be executed
+          // Create an empty blob as a fallback
+          const mockBlob = new Blob([""], {
+            type: "text/plain",
+          });
+
+          // This code should never execute
+          await saveDocumentOffline(doc.id, mockBlob, {
+            id: doc.id,
+            title: doc.title,
+            fileType: doc.fileType,
+            fileSize: doc.fileSize,
+            uploadDate: doc.uploadDate.toISOString(),
+            lastOpened: doc.lastOpened?.toISOString(),
+            isOffline: true,
+          });
+
+          setDownloadProgress((prev) => ({ ...prev, [doc.id]: 100 }));
+
+          // Update document in state immediately
+          setDocuments((prev) =>
+            prev.map((d) => (d.id === doc.id ? { ...d, isOffline: true } : d)),
+          );
+
+          // After a short delay, reset the download indicators
+          setTimeout(() => {
+            setIsDownloading((prev) => ({ ...prev, [doc.id]: false }));
+            setDownloadProgress((prev) => ({ ...prev, [doc.id]: 0 }));
+          }, 500);
+
+          return;
+        }
+
+        // Get download URL from storage using fetch for progress tracking
+        const { data: signedURL } = await supabase.storage
+          .from("documents")
+          .createSignedUrl(data.file_path, 60);
+
+        if (!signedURL?.signedUrl)
+          throw new Error("Failed to get download URL");
+        setDownloadProgress((prev) => ({ ...prev, [doc.id]: 40 }));
+
+        // Use fetch with progress tracking
+        const response = await fetch(signedURL.signedUrl);
+        if (!response.ok) throw new Error("Failed to download file");
+
+        // Get total size for progress calculation
+        const contentLength = response.headers.get("content-length");
+        const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+        // Create a reader to track progress
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("Failed to get reader");
+
+        // Read the data chunks with progress
+        let receivedLength = 0;
+        const chunks: Uint8Array[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) break;
+
+          chunks.push(value);
+          receivedLength += value.length;
+
+          // Calculate and update progress
+          if (total) {
+            const progress = Math.min(
+              40 + Math.round((receivedLength / total) * 50),
+              90,
+            );
+            setDownloadProgress((prev) => ({ ...prev, [doc.id]: progress }));
+          }
+        }
+
+        // Combine all chunks into a single Uint8Array
+        const chunksAll = new Uint8Array(receivedLength);
+        let position = 0;
+        for (const chunk of chunks) {
+          chunksAll.set(chunk, position);
+          position += chunk.length;
+        }
+
+        // Convert to blob
+        const blob = new Blob([chunksAll]);
+        setDownloadProgress((prev) => ({ ...prev, [doc.id]: 95 }));
+
+        // Save document for offline use
+        await saveDocumentOffline(doc.id, blob, {
+          id: doc.id,
+          title: doc.title,
+          fileType: doc.fileType,
+          fileSize: doc.fileSize,
+          uploadDate: doc.uploadDate.toISOString(),
+          lastOpened: doc.lastOpened?.toISOString(),
+          isOffline: true,
+        });
+
+        setDownloadProgress((prev) => ({ ...prev, [doc.id]: 100 }));
+
+        // Update document in state immediately
+        setDocuments((prev) =>
+          prev.map((d) => (d.id === doc.id ? { ...d, isOffline: true } : d)),
+        );
+
+        // After a short delay, reset the download indicators
+        setTimeout(() => {
+          setIsDownloading((prev) => ({ ...prev, [doc.id]: false }));
+          setDownloadProgress((prev) => ({ ...prev, [doc.id]: 0 }));
+        }, 500);
+      } catch (error) {
+        console.error("Error downloading document:", error);
+
+        // Reset download state
+        setIsDownloading((prev) => ({ ...prev, [doc.id]: false }));
+        setDownloadProgress((prev) => ({ ...prev, [doc.id]: 0 }));
+
+        // Use a more specific error message
+        if (error instanceof Error) {
+          alert(`Download failed: ${error.message}`);
+        } else {
+          alert(
+            "Failed to download document for offline use. Please try again later.",
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Error managing offline document:", error);
+      // Reset download state
+      setIsDownloading((prev) => ({ ...prev, [doc.id]: false }));
+      setDownloadProgress((prev) => ({ ...prev, [doc.id]: 0 }));
+      alert(
+        "Failed to manage offline document. Please check your connection and try again.",
+      );
+    }
   };
 
   const handleDeleteDocument = (doc: DocumentItem) => {
     setDocumentToDelete(doc);
   };
 
-  const confirmDelete = () => {
-    if (documentToDelete) {
+  const confirmDelete = async () => {
+    if (!documentToDelete) return;
+
+    try {
+      // Get the file path from the documents table
+      const { data, error } = await supabase
+        .from("documents")
+        .select("file_path")
+        .eq("id", documentToDelete.id)
+        .single();
+
+      if (error) throw error;
+
+      // Delete the file from storage
+      const { error: storageError } = await supabase.storage
+        .from("documents")
+        .remove([data.file_path]);
+
+      if (storageError) throw storageError;
+
+      // Delete the document record
+      const { error: deleteError } = await supabase
+        .from("documents")
+        .delete()
+        .eq("id", documentToDelete.id);
+
+      if (deleteError) throw deleteError;
+
+      // Update the UI
       setDocuments(documents.filter((doc) => doc.id !== documentToDelete.id));
       setDocumentToDelete(null);
+    } catch (error) {
+      console.error("Error deleting document:", error);
+      alert("Failed to delete document");
     }
   };
 
   const handleUploadComplete = (file: File) => {
-    // Create a new document item
-    const newDocument: DocumentItem = {
-      id: Date.now().toString(),
-      title: file.name,
-      fileType: file.name.split(".").pop() || "unknown",
-      fileSize: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
-      uploadDate: new Date(),
-    };
-
-    setDocuments([newDocument, ...documents]);
+    // Refresh the document list after upload
+    fetchDocuments();
     setIsUploadDialogOpen(false);
   };
 
@@ -146,7 +474,11 @@ export default function DocumentLibrary() {
         </div>
       </div>
 
-      {filteredDocuments.length === 0 ? (
+      {isLoading ? (
+        <div className="text-center py-12">
+          <p className="text-gray-500 mb-4">Loading documents...</p>
+        </div>
+      ) : filteredDocuments.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-gray-500 mb-4">No documents found</p>
           <Button
@@ -172,6 +504,8 @@ export default function DocumentLibrary() {
               onDownload={handleDownloadDocument}
               onDelete={handleDeleteDocument}
               view={viewMode}
+              downloadProgress={downloadProgress[doc.id] || 0}
+              isDownloading={isDownloading[doc.id] || false}
             />
           ))}
         </div>

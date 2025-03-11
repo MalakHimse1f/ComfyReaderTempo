@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -15,6 +15,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import EpubReader from "./EpubReader";
 import {
   ChevronLeft,
   Settings,
@@ -23,47 +24,178 @@ import {
   Bookmark,
   Download,
   Share2,
+  Loader2,
+  WifiOff,
 } from "lucide-react";
+import { supabase } from "../../../supabase/supabase";
+import {
+  getOfflineDocumentContent,
+  isDocumentAvailableOffline,
+  saveDocumentOffline,
+} from "@/lib/offlineStorage";
 import { Separator } from "@/components/ui/separator";
 
 interface DocumentReaderProps {
   documentTitle?: string;
+  documentId?: string | null;
   onBack?: () => void;
 }
 
 export default function DocumentReader({
   documentTitle = "Sample Document.pdf",
+  documentId = null,
   onBack = () => {},
 }: DocumentReaderProps) {
+  const [isOffline, setIsOffline] = useState(false);
   const [fontSize, setFontSize] = useState(16);
   const [fontFamily, setFontFamily] = useState("inter");
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [lineSpacing, setLineSpacing] = useState(1.5);
   const [margins, setMargins] = useState(16);
 
-  // Sample document content
-  const sampleContent = `
-    # Document Title
+  // State for document content
+  const [documentContent, setDocumentContent] = useState<string>("");
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [fileData, setFileData] = useState<Blob | null>(null);
 
-    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam in dui mauris. Vivamus hendrerit arcu sed erat molestie vehicula. Sed auctor neque eu tellus rhoncus ut eleifend nibh porttitor. Ut in nulla enim.
+  // Check if document is available offline
+  useEffect(() => {
+    const checkOfflineStatus = async () => {
+      if (!documentId) return;
+      const offlineStatus = await isDocumentAvailableOffline(documentId);
+      setIsOffline(offlineStatus);
+    };
 
-    ## Section 1
+    checkOfflineStatus();
+  }, [documentId]);
 
-    Suspendisse in justo eu magna luctus suscipit. Sed lectus. Integer euismod lacus luctus magna. Quisque cursus, metus vitae pharetra auctor, sem massa mattis sem, at interdum magna augue eget diam.
+  // Fetch document content when component mounts
+  useEffect(() => {
+    const fetchDocumentContent = async () => {
+      if (!documentId) {
+        setDocumentContent("No document selected");
+        setIsLoading(false);
+        return;
+      }
 
-    Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Morbi lacinia molestie dui. Praesent blandit dolor. Sed non quam. In vel mi sit amet augue congue elementum. Morbi in ipsum sit amet pede facilisis laoreet.
+      try {
+        // Check if document is available offline
+        const isOffline = await isDocumentAvailableOffline(documentId);
+        setIsOffline(isOffline); // Update offline status state
+        let fileData;
+        let fileType;
 
-    ## Section 2
+        if (isOffline) {
+          // Get document from offline storage
+          const offlineData = await getOfflineDocumentContent(documentId);
+          console.log(
+            "Retrieved offline content:",
+            offlineData ? "Content found" : "No content found",
+          );
+          fileData = offlineData;
+          setFileData(offlineData);
 
-    Donec lacus nunc, viverra nec, blandit vel, egestas et, augue. Vestibulum tincidunt malesuada tellus. Ut ultrices ultrices enim. Curabitur sit amet mauris. Morbi in dui quis est pulvinar ullamcorper.
+          if (!fileData) {
+            // Try to get file type from document title
+            const extension = documentTitle.split(".").pop()?.toLowerCase();
+            fileType = extension || "txt";
 
-    Nulla facilisi. Integer lacinia sollicitudin massa. Cras metus. Sed aliquet risus a tortor. Integer id quam. Morbi mi. Quisque nisl felis, venenatis tristique, dignissim in, ultrices sit amet, augue.
+            // Create a fallback message
+            const errorBlob = new Blob(
+              [
+                `Unable to retrieve content for ${documentTitle}. Please try downloading the document again.`,
+              ],
+              { type: "text/plain" },
+            );
+            fileData = errorBlob;
+            setFileData(errorBlob);
+          } else {
+            // Get file type from document title
+            const extension = documentTitle.split(".").pop()?.toLowerCase();
+            fileType = extension || "txt";
+          }
+        } else {
+          try {
+            // Get the document record to find the file path
+            const { data, error } = await supabase
+              .from("documents")
+              .select("file_path, file_type")
+              .eq("id", documentId)
+              .single();
 
-    ## Section 3
+            if (error) throw error;
 
-    Proin sodales libero eget ante. Nulla quam. Aenean laoreet. Vestibulum nisi lectus, commodo ac, facilisis ac, ultricies eu, pede. Ut orci risus, accumsan porttitor, cursus quis, aliquet eget, justo.
+            // Get download URL from storage
+            const { data: onlineFileData, error: downloadError } =
+              await supabase.storage.from("documents").download(data.file_path);
 
-    Sed pretium blandit orci. Ut eu diam at pede suscipit sodales. Aenean lectus elit, fermentum non, convallis id, sagittis at, neque. Nullam mauris orci, aliquet et, iaculis et, viverra vitae, ligula. Nulla ut felis in purus aliquam imperdiet.
+            if (downloadError) throw downloadError;
+
+            fileData = onlineFileData;
+            setFileData(onlineFileData);
+            fileType = data.file_type;
+          } catch (supabaseError) {
+            console.error("Error fetching from Supabase:", supabaseError);
+            // Create a fallback for when Supabase fails
+            const errorBlob = new Blob(
+              [
+                `Unable to fetch document from server. Please check your internet connection and try again.`,
+              ],
+              { type: "text/plain" },
+            );
+            fileData = errorBlob;
+            setFileData(errorBlob);
+            const extension = documentTitle.split(".").pop()?.toLowerCase();
+            fileType = extension || "txt";
+          }
+        }
+
+        // Read the file content based on file type
+        let content = "";
+        try {
+          console.log(`Processing file of type: ${fileType}`);
+          if (fileType.toLowerCase() === "txt" || !fileType) {
+            content = await fileData.text();
+            console.log(`Text content length: ${content.length} characters`);
+          } else if (fileType.toLowerCase() === "pdf") {
+            content =
+              "PDF content is being processed. This feature is coming soon.";
+          } else if (fileType.toLowerCase() === "epub") {
+            // For EPUB files, we'll handle them differently with the EpubReader component
+            // Just set a placeholder here, the actual rendering is done in the JSX
+            content = "EPUB_CONTENT_PLACEHOLDER";
+          } else {
+            content = `This document type (${fileType}) is currently being viewed in preview mode.`;
+          }
+
+          setDocumentContent(content);
+        } catch (readError) {
+          console.error("Error reading file content:", readError);
+          setDocumentContent(
+            `Unable to read document content. Error: ${readError.message}`,
+          );
+        }
+      } catch (error) {
+        console.error("Error fetching document:", error);
+        // Provide a more specific error message
+        if (error instanceof Error) {
+          setDocumentContent(`Error loading document: ${error.message}`);
+        } else {
+          setDocumentContent("Error loading document. Please try again later.");
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDocumentContent();
+  }, [documentId, documentTitle]);
+
+  // Fallback content for when no document is loaded
+  const fallbackContent = `
+    # Document Reader
+
+    No document content to display. Please select a document from your library.
   `;
 
   return (
@@ -86,9 +218,60 @@ export default function DocumentReader({
             <Button variant="ghost" size="icon" title="Bookmark">
               <Bookmark className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" title="Download">
-              <Download className="h-5 w-5" />
-            </Button>
+            {isOffline ? (
+              <Button variant="ghost" size="icon" title="Available Offline">
+                <WifiOff className="h-5 w-5 text-blue-500" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Save for Offline"
+                onClick={async () => {
+                  try {
+                    if (!documentId) return;
+
+                    // Get the document record to find the file path
+                    const { data, error } = await supabase
+                      .from("documents")
+                      .select("file_path, file_type, file_size")
+                      .eq("id", documentId)
+                      .single();
+
+                    if (error) throw error;
+
+                    // Get download URL from storage
+                    const { data: fileData, error: downloadError } =
+                      await supabase.storage
+                        .from("documents")
+                        .download(data.file_path);
+
+                    if (downloadError) throw downloadError;
+
+                    // Save document for offline use
+                    await saveDocumentOffline(documentId, fileData, {
+                      id: documentId,
+                      title: documentTitle,
+                      fileType: data.file_type,
+                      fileSize: data.file_size,
+                      uploadDate: new Date().toISOString(),
+                      lastOpened: new Date().toISOString(),
+                      isOffline: true,
+                    });
+
+                    // Show success message
+                    // Update offline status
+                    setIsOffline(true);
+                    alert("Document saved for offline use");
+                  } catch (error) {
+                    console.error("Error saving document for offline:", error);
+                    alert("Failed to save document for offline use");
+                  }
+                }}
+              >
+                <Download className="h-5 w-5" />
+              </Button>
+            )}
             <Button variant="ghost" size="icon" title="Share">
               <Share2 className="h-5 w-5" />
             </Button>
@@ -175,43 +358,68 @@ export default function DocumentReader({
 
       {/* Document Content */}
       <main className="container mx-auto py-8">
-        <div
-          className={`mx-auto prose ${isDarkMode ? "prose-invert" : ""} max-w-none`}
-          style={{
-            fontFamily:
-              fontFamily === "inter"
-                ? "Inter, sans-serif"
-                : fontFamily === "georgia"
-                  ? "Georgia, serif"
-                  : fontFamily === "times"
-                    ? '"Times New Roman", Times, serif'
-                    : '"Courier New", Courier, monospace',
-            fontSize: `${fontSize}px`,
-            lineHeight: lineSpacing,
-            padding: `0 ${margins}px`,
-            maxWidth: `calc(100% - ${margins * 2}px)`,
-          }}
-        >
-          {/* This would be the actual document content */}
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="h-12 w-12 animate-spin text-gray-400 mb-4" />
+            <p className="text-gray-500">Loading document...</p>
+          </div>
+        ) : documentContent === "EPUB_CONTENT_PLACEHOLDER" && fileData ? (
           <div
-            dangerouslySetInnerHTML={{
-              __html: sampleContent
-                .split("\n")
-                .map((line) => {
-                  if (line.startsWith("# ")) {
-                    return `<h1>${line.substring(2)}</h1>`;
-                  } else if (line.startsWith("## ")) {
-                    return `<h2>${line.substring(3)}</h2>`;
-                  } else if (line.trim() === "") {
-                    return "<p>&nbsp;</p>";
-                  } else {
-                    return `<p>${line}</p>`;
-                  }
-                })
-                .join(""),
+            className="mx-auto"
+            style={{
+              padding: `0 ${margins}px`,
+              maxWidth: `calc(100% - ${margins * 2}px)`,
+              height: "calc(100vh - 200px)",
+              backgroundColor: isDarkMode ? "#1a1a1a" : "#ffffff",
             }}
-          />
-        </div>
+          >
+            <EpubReader
+              url={fileData}
+              fontFamily={fontFamily}
+              fontSize={fontSize}
+              lineSpacing={lineSpacing}
+              isDarkMode={isDarkMode}
+            />
+          </div>
+        ) : (
+          <div
+            className={`mx-auto prose ${isDarkMode ? "prose-invert" : ""} max-w-none`}
+            style={{
+              fontFamily:
+                fontFamily === "inter"
+                  ? "Inter, sans-serif"
+                  : fontFamily === "georgia"
+                    ? "Georgia, serif"
+                    : fontFamily === "times"
+                      ? '"Times New Roman", Times, serif'
+                      : '"Courier New", Courier, monospace',
+              fontSize: `${fontSize}px`,
+              lineHeight: lineSpacing,
+              padding: `0 ${margins}px`,
+              maxWidth: `calc(100% - ${margins * 2}px)`,
+            }}
+          >
+            {/* Actual document content */}
+            <div
+              dangerouslySetInnerHTML={{
+                __html: (documentContent || fallbackContent)
+                  .split("\n")
+                  .map((line) => {
+                    if (line.startsWith("# ")) {
+                      return `<h1>${line.substring(2)}</h1>`;
+                    } else if (line.startsWith("## ")) {
+                      return `<h2>${line.substring(3)}</h2>`;
+                    } else if (line.trim() === "") {
+                      return "<p>&nbsp;</p>";
+                    } else {
+                      return `<p>${line}</p>`;
+                    }
+                  })
+                  .join(""),
+              }}
+            />
+          </div>
+        )}
       </main>
     </div>
   );
