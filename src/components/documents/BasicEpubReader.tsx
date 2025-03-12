@@ -268,10 +268,19 @@ const BasicEpubReader = forwardRef<any, BasicEpubReaderProps>(
         // Handle relocated event
         rendition.on("relocated", (location: any) => {
           try {
+            if (!location || !location.start) {
+              addDebugMessage("Invalid location object in relocated event");
+              return;
+            }
+
             addDebugMessage(`Relocated to: ${location.start.cfi}`);
 
             // Get the current page number directly from the book's locations
-            if (book.locations.length()) {
+            if (
+              book.locations &&
+              typeof book.locations.percentageFromCfi === "function" &&
+              book.locations.length()
+            ) {
               // Get the percentage of the current location
               const progress = book.locations.percentageFromCfi(
                 location.start.cfi
@@ -280,68 +289,132 @@ const BasicEpubReader = forwardRef<any, BasicEpubReaderProps>(
               // Calculate current page based on total pages and progress
               const page = Math.max(
                 1,
-                Math.round(progress * totalDocumentPages)
+                Math.round(progress * totalDocumentPages || 100)
               );
               setCurrentGlobalPage(page);
-              addDebugMessage(
-                `Current page: ${page} of ${totalDocumentPages} (${(
-                  progress * 100
-                ).toFixed(1)}%)`
-              );
 
               // Update progress percentage (0-100)
               const progressPercentage = Math.round(progress * 100);
               setProgress(progressPercentage);
+              addDebugMessage(
+                `Current page: ${page} of ${totalDocumentPages} (${progressPercentage}%)`
+              );
 
               if (onProgressChange) {
                 onProgressChange(progressPercentage);
               }
             } else {
+              // If locations aren't generated yet, use a simple percentage based on index
+              if (book.spine && book.spine.items && book.spine.items.length) {
+                const spineLength = book.spine.items.length;
+                const currentIndex = location.start.index || 0;
+                const roughProgress = (currentIndex / spineLength) * 100;
+
+                setProgress(Math.round(roughProgress));
+                addDebugMessage(
+                  `Using rough progress: ${Math.round(
+                    roughProgress
+                  )}% (based on spine position)`
+                );
+
+                if (onProgressChange) {
+                  onProgressChange(Math.round(roughProgress));
+                }
+              }
+
               addDebugMessage(
-                "Locations not yet generated, can't calculate page"
+                "Locations not yet generated, using spine-based progress"
               );
             }
 
-            // Get current chapter
-            if (location.start) {
-              book.spine
-                .get(location.start.index)
-                .then((section: any) => {
-                  if (section && section.href) {
-                    addDebugMessage(`Current section href: ${section.href}`);
+            // Get current chapter - using a more robust approach
+            if (location.start !== undefined) {
+              try {
+                // Direct access to spine items instead of using promises
+                let sectionTitle = "Chapter";
+                let sectionHref = "";
+
+                // Safer way to access spine item
+                const spineItem =
+                  book.spine &&
+                  book.spine.items &&
+                  book.spine.items[location.start.index];
+
+                if (spineItem) {
+                  sectionHref = spineItem.href || "";
+                  // Get a basic fallback title from the filename
+                  const hrefParts = sectionHref.split("/");
+                  const filename = hrefParts[hrefParts.length - 1] || "";
+                  sectionTitle = filename
+                    .replace(/\.x?html$/i, "")
+                    .replace(/[_-]/g, " ");
+
+                  addDebugMessage(`Found spine item: ${sectionHref}`);
+
+                  // Try to get a better title from the navigation if available
+                  if (
+                    book.navigation &&
+                    typeof book.navigation.get === "function"
+                  ) {
                     book.navigation
-                      .get(section.href)
+                      .get(sectionHref)
                       .then((tocItem: any) => {
                         if (tocItem && tocItem.label) {
-                          addDebugMessage(
-                            `Chapter title from TOC: ${tocItem.label}`
-                          );
+                          addDebugMessage(`Found TOC title: ${tocItem.label}`);
                           setCurrentChapter(tocItem.label);
                           if (onChapterChange) {
                             onChapterChange(tocItem.label);
                           }
+                        } else {
+                          // If no TOC title, use the fallback
+                          addDebugMessage(
+                            `No TOC title found, using filename: ${sectionTitle}`
+                          );
+                          setCurrentChapter(sectionTitle);
+                          if (onChapterChange) {
+                            onChapterChange(sectionTitle);
+                          }
                         }
                       })
                       .catch((err: any) => {
-                        addDebugMessage(`Error getting chapter title: ${err}`);
-                        // Fallback chapter name
-                        const sectionTitle =
-                          section.href.split("/").pop() ||
-                          `Chapter ${location.start.index + 1}`;
+                        // If navigation fails, use the fallback title
                         addDebugMessage(
-                          `Using fallback chapter title: ${sectionTitle}`
+                          `Error getting chapter title: ${err}, using fallback: ${sectionTitle}`
                         );
                         setCurrentChapter(sectionTitle);
                         if (onChapterChange) {
                           onChapterChange(sectionTitle);
                         }
                       });
+                  } else {
+                    // If navigation function isn't available, use the fallback title
+                    addDebugMessage(
+                      `Navigation lookup not available, using fallback title: ${sectionTitle}`
+                    );
+                    setCurrentChapter(sectionTitle);
+                    if (onChapterChange) {
+                      onChapterChange(sectionTitle);
+                    }
                   }
-                })
-                .catch((err: any) => {
-                  addDebugMessage(`Error getting spine item: ${err}`);
-                  console.error("Error getting spine item:", err);
-                });
+                } else {
+                  // If spine item isn't found, use a generic chapter title
+                  const genericTitle = `Section ${location.start.index + 1}`;
+                  addDebugMessage(
+                    `No spine item found, using generic title: ${genericTitle}`
+                  );
+                  setCurrentChapter(genericTitle);
+                  if (onChapterChange) {
+                    onChapterChange(genericTitle);
+                  }
+                }
+              } catch (spineErr) {
+                addDebugMessage(`Error handling spine item: ${spineErr}`);
+                const fallbackTitle = `Section ${location.start.index + 1}`;
+                setCurrentChapter(fallbackTitle);
+                if (onChapterChange) {
+                  onChapterChange(fallbackTitle);
+                }
+              }
             }
 
             // Save position
@@ -368,26 +441,46 @@ const BasicEpubReader = forwardRef<any, BasicEpubReaderProps>(
           await book.ready;
           addDebugMessage("EPUB is ready");
 
-          // Log EPUB metadata
-          if (book.packaging && book.packaging.metadata) {
-            const meta = book.packaging.metadata;
-            addDebugMessage(`Title: ${meta.title}`);
-            if (meta.creator) addDebugMessage(`Author: ${meta.creator}`);
-            if (meta.description)
-              addDebugMessage(
-                `Description: ${meta.description.substring(0, 100)}...`
-              );
+          // Safely log EPUB metadata
+          try {
+            if (book.packaging && book.packaging.metadata) {
+              const meta = book.packaging.metadata;
+              if (meta.title) addDebugMessage(`Title: ${meta.title}`);
+              if (meta.creator) addDebugMessage(`Author: ${meta.creator}`);
+              if (meta.description)
+                addDebugMessage(
+                  `Description: ${meta.description.substring(0, 100)}...`
+                );
+            } else {
+              addDebugMessage("Book metadata not available");
+            }
+          } catch (metaErr) {
+            addDebugMessage(`Error reading metadata: ${metaErr}`);
           }
 
-          // Log spine information
-          if (book.spine) {
-            addDebugMessage(`Spine items: ${book.spine.length}`);
-            addDebugMessage(
-              `First few items: ${book.spine.items
-                .slice(0, 3)
-                .map((item: any) => item.href)
-                .join(", ")}...`
-            );
+          // Safely log spine information
+          try {
+            if (book.spine) {
+              const spineLength = book.spine.items
+                ? book.spine.items.length
+                : 0;
+              addDebugMessage(`Spine items: ${spineLength}`);
+
+              if (book.spine.items && book.spine.items.length > 0) {
+                const firstFew = book.spine.items
+                  .slice(0, Math.min(3, spineLength))
+                  .map((item: any) => item.href || "Unknown")
+                  .filter(Boolean)
+                  .join(", ");
+                addDebugMessage(
+                  `First few items: ${firstFew || "None found"}...`
+                );
+              }
+            } else {
+              addDebugMessage("Book spine not available");
+            }
+          } catch (spineErr) {
+            addDebugMessage(`Error reading spine: ${spineErr}`);
           }
         } catch (err) {
           addDebugMessage(
@@ -395,11 +488,9 @@ const BasicEpubReader = forwardRef<any, BasicEpubReaderProps>(
               err instanceof Error ? err.message : String(err)
             }`
           );
-          throw new Error(
-            `Book initialization failed: ${
-              err instanceof Error ? err.message : String(err)
-            }`
-          );
+
+          // Don't throw here, try to continue with limited functionality
+          addDebugMessage("Attempting to continue with limited functionality");
         }
 
         // Load TOC

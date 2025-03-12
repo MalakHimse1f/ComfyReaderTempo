@@ -1,0 +1,9 @@
+This is a placeholder file for the EPUB test fixtures directory.
+
+In a real testing environment, you would place actual EPUB files here for testing.
+For example:
+- sample-book.epub
+- empty-book.epub
+- corrupted-book.epub
+
+These files would be used by the test suite to verify the EPUB processing functionality. 
