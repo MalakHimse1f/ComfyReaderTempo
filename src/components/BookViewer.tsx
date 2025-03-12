@@ -119,15 +119,19 @@ export const BookViewer: React.FC<BookViewerProps> = ({
         <button onClick={handleRetry} className="retry-button">
           Retry
         </button>
-        <button
-          onClick={() => {
-            // Fall back to basic reader regardless of processing status
-            setError(null);
-          }}
-          className="fallback-button"
-        >
-          Open with Basic Reader
-        </button>
+        {/* Only show fallback for non-EPUB files */}
+        {!book.filePath.endsWith(".epub") &&
+          !book.filePath.includes("epub") && (
+            <button
+              onClick={() => {
+                // Fall back to basic reader for non-EPUB files only
+                setError(null);
+              }}
+              className="fallback-button"
+            >
+              Open with Basic Reader
+            </button>
+          )}
       </div>
     );
   }
@@ -152,6 +156,10 @@ export const BookViewer: React.FC<BookViewerProps> = ({
           We're preparing this book for an optimal reading experience. This
           happens only once and will make future reading sessions faster.
         </p>
+        <p className="processing-warning">
+          Please do not navigate away from this page until processing is
+          complete.
+        </p>
       </div>
     );
   }
@@ -169,11 +177,61 @@ export const BookViewer: React.FC<BookViewerProps> = ({
     );
   }
 
-  // Fall back to the basic reader if processing failed or for non-EPUB files
+  // If it's an EPUB that should be processed but hasn't been yet, show a message
+  if (book.filePath.endsWith(".epub") || book.filePath.includes("epub")) {
+    return (
+      <div className="processing-required">
+        <h3>This book needs to be optimized first</h3>
+        <p>
+          This EPUB needs to be processed before reading for the best
+          experience.
+        </p>
+        <button
+          onClick={() => {
+            // Start processing manually
+            fetch(book.filePath)
+              .then((response) => {
+                if (!response.ok) {
+                  throw new Error(`Failed to fetch book: ${response.status}`);
+                }
+                return response.blob();
+              })
+              .then(
+                (blob) =>
+                  new File([blob], book.title, { type: "application/epub+zip" })
+              )
+              .then((file) =>
+                BookPreProcessingService.processBook(book.id, file)
+              )
+              .then((processedBookId) => {
+                if (onUpdateBook) {
+                  onUpdateBook({
+                    ...book,
+                    processedBookId,
+                  });
+                }
+              })
+              .catch((err) => {
+                console.error("Error processing book:", err);
+                setError(`Failed to process book: ${err.message}`);
+              });
+          }}
+          className="process-button"
+        >
+          Optimize Now
+        </button>
+        <p className="processing-note">
+          Processing may take a few moments depending on the size of the book.
+        </p>
+      </div>
+    );
+  }
+
+  // Fall back to the basic reader only for non-EPUB files
   return (
     <div className="basic-reader-container">
       <div className="basic-reader-notice">
-        <p>Using basic reader for this document</p>
+        <p>Using basic reader for this non-EPUB document</p>
       </div>
       <BasicEpubReader
         bookPath={book.filePath}

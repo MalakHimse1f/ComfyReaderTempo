@@ -113,7 +113,30 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   // Open a book
   const openBook = (book: Book) => {
-    navigate(`/reader/${book.id}`);
+    // Get the current processing status
+    const status = processingStatuses[book.id];
+
+    // If the book is still processing or uploading, block access
+    if (
+      status?.status === "processing" ||
+      (status?.inCloud === false && status?.status === "processed" && isSyncing)
+    ) {
+      console.log(
+        "Book is still processing or uploading. Please wait until it completes."
+      );
+      return; // Block navigation
+    }
+
+    // If the book is processed, open the processed version
+    if (status?.status === "processed" || book.processedBookId) {
+      // Navigate to the processed book reader
+      navigate(`/reader/${book.id}`);
+    } else {
+      console.log(
+        "This book needs to be processed before reading. Please click 'Optimize' first."
+      );
+      return; // Block navigation for unprocessed books
+    }
   };
 
   // Process a book that hasn't been processed yet
@@ -270,133 +293,179 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         </div>
       ) : (
         <div className="book-grid">
-          {books.map((book) => (
-            <div className="book-card" key={book.id}>
+          {books.map((book) => {
+            // Check if book is in a disabled state (processing or syncing)
+            const isDisabled =
+              processingStatuses[book.id]?.status === "processing" ||
+              (processingStatuses[book.id]?.status === "processed" &&
+                processingStatuses[book.id]?.inCloud === false &&
+                isSyncing);
+
+            return (
               <div
-                className="book-cover"
-                style={{
-                  backgroundImage: book.coverUrl
-                    ? `url(${book.coverUrl})`
-                    : "none",
-                }}
-                onClick={() => openBook(book)}
+                className={`book-card ${
+                  isDisabled ? "book-card-disabled" : ""
+                }`}
+                key={book.id}
               >
-                {!book.coverUrl && (
-                  <div className="book-cover-placeholder">
-                    {book.title.substring(0, 1)}
-                  </div>
-                )}
-
-                {/* Show processing indicator */}
-                {processingStatuses[book.id]?.status === "processing" && (
-                  <div className="processing-overlay">
-                    <div className="processing-indicator">
-                      <div
-                        className="progress-bar"
-                        style={{
-                          width: `${processingStatuses[book.id].progress}%`,
-                        }}
-                      ></div>
-                    </div>
-                    <span className="progress-text">
-                      {Math.round(processingStatuses[book.id].progress || 0)}%
-                    </span>
-                  </div>
-                )}
-
-                {/* Display processed indicator */}
-                {processingStatuses[book.id]?.status === "processed" && (
-                  <div
-                    className="processed-badge"
-                    title={
-                      processingStatuses[book.id]?.inCloud
-                        ? "This book has been processed and is stored in the cloud"
-                        : "This book has been processed"
-                    }
-                  >
-                    ✓
-                  </div>
-                )}
-
-                {/* Cloud storage indicator - only show if book is in cloud but not processed locally */}
-                {processingStatuses[book.id]?.inCloud &&
-                  processingStatuses[book.id]?.status !== "processed" && (
-                    <div
-                      className="cloud-badge"
-                      title="This book is available in cloud storage"
-                    >
-                      ☁
+                <div
+                  className="book-cover"
+                  style={{
+                    backgroundImage: book.coverUrl
+                      ? `url(${book.coverUrl})`
+                      : "none",
+                  }}
+                  onClick={() => {
+                    // Don't do anything if disabled
+                    if (isDisabled) return;
+                    openBook(book);
+                  }}
+                >
+                  {!book.coverUrl && (
+                    <div className="book-cover-placeholder">
+                      {book.title.substring(0, 1)}
                     </div>
                   )}
 
-                {/* Display error indicator */}
-                {processingStatuses[book.id]?.error && (
-                  <div
-                    className="error-badge"
-                    title={processingStatuses[book.id].error}
-                  >
-                    !
-                  </div>
-                )}
-              </div>
+                  {/* Show processing indicator */}
+                  {processingStatuses[book.id]?.status === "processing" && (
+                    <div className="processing-overlay">
+                      <div className="processing-indicator">
+                        <div
+                          className="progress-bar"
+                          style={{
+                            width: `${processingStatuses[book.id].progress}%`,
+                          }}
+                        ></div>
+                      </div>
+                      <span className="progress-text">
+                        {Math.round(processingStatuses[book.id].progress || 0)}%
+                      </span>
+                    </div>
+                  )}
 
-              <div className="book-info">
-                <h3 className="book-title" onClick={() => openBook(book)}>
-                  {book.title}
-                </h3>
-                <p className="book-author">{book.author}</p>
-                <div className="book-meta">
-                  <span className="book-size">
-                    {formatFileSize(book.fileSize)}
-                  </span>
-                  <span className="book-date">
-                    {formatDate(book.dateAdded)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="book-actions">
-                <button
-                  className="action-button read-button"
-                  onClick={() => openBook(book)}
-                >
-                  Read
-                </button>
-
-                {!book.processedBookId &&
-                  processingStatuses[book.id]?.status !== "processing" && (
-                    <button
-                      className="action-button process-button"
-                      onClick={() => processBook(book)}
+                  {/* Display processed indicator */}
+                  {processingStatuses[book.id]?.status === "processed" && (
+                    <div
+                      className="processed-badge"
+                      title={
+                        processingStatuses[book.id]?.inCloud
+                          ? "This book has been processed and is stored in the cloud"
+                          : "This book has been processed"
+                      }
                     >
-                      Optimize
+                      ✓
+                    </div>
+                  )}
+
+                  {/* Cloud storage indicator - only show if book is in cloud but not processed locally */}
+                  {processingStatuses[book.id]?.inCloud &&
+                    processingStatuses[book.id]?.status !== "processed" && (
+                      <div
+                        className="cloud-badge"
+                        title="This book is available in cloud storage"
+                      >
+                        ☁
+                      </div>
+                    )}
+
+                  {/* Display error indicator */}
+                  {processingStatuses[book.id]?.error && (
+                    <div
+                      className="error-badge"
+                      title={processingStatuses[book.id].error}
+                    >
+                      !
+                    </div>
+                  )}
+
+                  {/* Add a semi-transparent overlay while processing/syncing */}
+                  {(processingStatuses[book.id]?.status === "processing" ||
+                    (processingStatuses[book.id]?.status === "processed" &&
+                      processingStatuses[book.id]?.inCloud === false &&
+                      isSyncing)) && (
+                    <div className="processing-lock-overlay">
+                      <div className="processing-lock-message">
+                        {processingStatuses[book.id]?.status === "processing"
+                          ? "Processing..."
+                          : "Syncing..."}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="book-info">
+                  <h3
+                    className="book-title"
+                    onClick={() => {
+                      // Don't do anything if disabled
+                      if (isDisabled) return;
+                      openBook(book);
+                    }}
+                  >
+                    {book.title}
+                  </h3>
+                  <p className="book-author">{book.author}</p>
+                  <div className="book-meta">
+                    <span className="book-size">
+                      {formatFileSize(book.fileSize)}
+                    </span>
+                    <span className="book-date">
+                      {formatDate(book.dateAdded)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="book-actions">
+                  <button
+                    className="action-button read-button"
+                    onClick={() => openBook(book)}
+                    disabled={isDisabled}
+                  >
+                    {processingStatuses[book.id]?.status === "processing"
+                      ? "Processing..."
+                      : processingStatuses[book.id]?.status === "processed" &&
+                        processingStatuses[book.id]?.inCloud === false &&
+                        isSyncing
+                      ? "Syncing..."
+                      : "Read"}
+                  </button>
+
+                  {!book.processedBookId &&
+                    processingStatuses[book.id]?.status !== "processing" && (
+                      <button
+                        className="action-button process-button"
+                        onClick={() => processBook(book)}
+                      >
+                        Optimize
+                      </button>
+                    )}
+
+                  {processingStatuses[book.id]?.error && (
+                    <button
+                      className="action-button retry-button"
+                      onClick={() => retryProcessing(book)}
+                    >
+                      Retry
                     </button>
                   )}
 
-                {processingStatuses[book.id]?.error && (
-                  <button
-                    className="action-button retry-button"
-                    onClick={() => retryProcessing(book)}
-                  >
-                    Retry
-                  </button>
-                )}
-
-                {/* Sync button for processed books */}
-                {(processingStatuses[book.id]?.status === "processed" ||
-                  book.processedBookId) && (
-                  <button
-                    className="action-button sync-button"
-                    onClick={() => handleForceSyncBook(book)}
-                    disabled={isSyncing}
-                    title="Sync to cloud storage"
-                  >
-                    Sync
-                  </button>
-                )}
+                  {/* Sync button for processed books */}
+                  {(processingStatuses[book.id]?.status === "processed" ||
+                    book.processedBookId) && (
+                    <button
+                      className="action-button sync-button"
+                      onClick={() => handleForceSyncBook(book)}
+                      disabled={isSyncing}
+                      title="Sync to cloud storage"
+                    >
+                      Sync
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -404,3 +473,31 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 };
 
 export default LibraryView;
+
+export const additionalCss = `
+  .processing-lock-overlay {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    z-index: 2;
+  }
+  
+  .processing-lock-message {
+    color: white;
+    font-size: 1rem;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    background-color: rgba(0, 0, 0, 0.7);
+    border-radius: 4px;
+  }
+  
+  .action-button:disabled {
+    background-color: #d1d5db;
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+`;

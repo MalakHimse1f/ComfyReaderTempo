@@ -25,6 +25,8 @@ export interface DocumentItem {
   isEpubProcessed?: boolean;
   isEpubProcessing?: boolean;
   epubProcessingProgress?: number;
+  isProcessed?: boolean;
+  processedEpubId?: string;
 }
 
 interface DocumentCardProps {

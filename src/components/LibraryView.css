@@ -18,15 +18,15 @@
 }
 
 .library-actions {
+  margin-top: 1rem;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
   flex-wrap: wrap;
-  margin-top: 10px;
-  padding: 10px 0;
-  border-top: 1px solid #eee;
-  border-bottom: 1px solid #eee;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 1rem;
+  border-radius: 8px;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
 }
 
 .sync-message {
@@ -279,36 +279,73 @@
 }
 
 .sync-button {
-  background-color: #673ab7;
+  background-color: #4f46e5;
   color: white;
   font-weight: 500;
-  padding: 8px 16px;
-  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 0.375rem;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
-  transition: all 0.2s ease;
-  min-width: 180px;
-  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
 }
 
-.sync-button::before {
-  content: "↑↓";
-  font-size: 14px;
-}
-
-.sync-button:hover {
-  background-color: #5e35b1;
-  transform: translateY(-2px);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+.sync-button:hover:not(:disabled) {
+  background-color: #4338ca;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .sync-button:disabled {
-  background-color: #b39ddb;
+  background-color: #d1d5db;
   cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
+  opacity: 0.7;
+}
+
+/* Processing lock overlay */
+.processing-lock-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  z-index: 2;
+}
+
+.processing-lock-message {
+  color: white;
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  background-color: rgba(0, 0, 0, 0.7);
+  border-radius: 4px;
+}
+
+/* Disabled buttons */
+.action-button:disabled {
+  background-color: #d1d5db;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Add a message for when the book is locked */
+.book-locked-message {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  text-align: center;
+  z-index: 3;
+  pointer-events: none;
 }
 
 /* Responsive adjustments */
@@ -344,4 +381,36 @@
   .book-title {
     font-size: 14px;
   }
+}
+
+/* Disabled book card */
+.book-card-disabled {
+  opacity: 0.75;
+  pointer-events: none; /* Blocks all pointer events on the card */
+  filter: grayscale(0.5);
+  box-shadow: none !important; /* Remove shadow effect */
+  transform: none !important; /* Prevent hover effect */
+  transition: none !important; /* Disable transitions */
+  position: relative;
+}
+
+.book-card-disabled::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: rgba(243, 244, 246, 0.5);
+  border-radius: 8px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* Ensure cursor is not a pointer for disabled cards */
+.book-card-disabled .book-cover,
+.book-card-disabled .book-title {
+  cursor: not-allowed;
+}
+
+/* Make it clear title can't be clicked */
+.book-card-disabled .book-title:hover {
+  color: #333; /* Don't change color on hover */
 }

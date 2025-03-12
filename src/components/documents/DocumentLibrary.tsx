@@ -109,11 +109,15 @@ export default function DocumentLibrary({
   useEffect(() => {
     if (!documents.length) return;
 
-    // Initialize status for EPUB documents
+    // Initialize status for EPUB documents that have been processed
     const initialStatuses: { [key: string]: ProcessingStatus } = {};
 
     documents.forEach((doc) => {
-      if (doc.fileType.toLowerCase() === "epub") {
+      // Only check EPUBs that are already processed or have a processedEpubId
+      if (
+        doc.fileType.toLowerCase() === "epub" &&
+        (doc.isProcessed || doc.processedEpubId)
+      ) {
         initialStatuses[doc.id] = BookPreProcessingService.getProcessingStatus(
           doc.id
         );
@@ -127,7 +131,11 @@ export default function DocumentLibrary({
       const updatedStatuses: { [key: string]: ProcessingStatus } = {};
 
       documents.forEach((doc) => {
-        if (doc.fileType.toLowerCase() === "epub") {
+        // Only check EPUBs that are already processed or have a processedEpubId
+        if (
+          doc.fileType.toLowerCase() === "epub" &&
+          (doc.isProcessed || doc.processedEpubId)
+        ) {
           updatedStatuses[doc.id] =
             BookPreProcessingService.getProcessingStatus(doc.id);
         }
@@ -142,6 +150,7 @@ export default function DocumentLibrary({
   const fetchDocuments = async () => {
     try {
       setIsLoading(true);
+      // Remove the filter for is_temporary since this column doesn't exist
       const { data, error } = await supabase
         .from("documents")
         .select("*")
@@ -177,6 +186,10 @@ export default function DocumentLibrary({
           console.log(`Parsed progress for ${doc.id}: ${progress}%`);
         }
 
+        // Check if this is an is_processed field exists (gracefully handle if not)
+        const isProcessed = doc.is_processed === true;
+        const processedEpubId = doc.processed_epub_id || undefined;
+
         return {
           id: doc.id,
           title: doc.title,
@@ -187,6 +200,8 @@ export default function DocumentLibrary({
           thumbnailUrl: doc.thumbnail_url,
           isOffline: offlineDocIds.includes(doc.id),
           readingProgress: progress,
+          isProcessed: isProcessed,
+          processedEpubId: processedEpubId,
         };
       });
 
