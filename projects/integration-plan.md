@@ -289,11 +289,14 @@ interface DocumentItem {
 
 ### Phase 1: Background Processing
 
-- [ ] **DocumentUpload Integration**
-  - [ ] Add imports for BookPreProcessingService in DocumentUpload.tsx
-  - [ ] Modify handleFileSelection function to detect EPUB files
-  - [ ] Implement background processing after regular upload
-  - [ ] Add proper error handling for preprocessing failures
+- [x] **DocumentUpload Integration**
+  - [x] Add imports for BookPreProcessingService in DocumentUpload.tsx
+  - [x] Modify handleFileSelection function to detect EPUB files
+  - [x] Implement background processing after regular upload
+  - [x] Add proper error handling for preprocessing failures
+  - [x] Add temporary visual feedback for testing purposes
+  - [x] Simplify upload process to work with existing database schema
+  - [x] Fix CORS and database schema compatibility issues
   - [ ] Test that EPUBs are uploaded normally
   - [ ] Test that preprocessing is triggered in the background
   - [ ] Verify preprocessing completes without errors
@@ -351,6 +354,17 @@ interface DocumentItem {
   - [ ] Check browser compatibility
   - [ ] Test on different screen sizes
   - [ ] Review code for any memory leaks or performance issues
+
+## Integration Notes
+
+### Database Schema Compatibility
+
+The initial implementation assumed the presence of `document_id` and `processed_book_id` columns in the documents table, which don't exist in the current database schema. The updated approach:
+
+1. Uses direct upload to Supabase Storage instead of the Edge Function (which had CORS issues)
+2. Uses the actual document ID returned from the database after insertion
+3. Attempts to update with a `processed_epub_id` field but gracefully handles if that field doesn't exist
+4. Simplifies error handling to focus on the core functionality
 
 ## Conclusion
 

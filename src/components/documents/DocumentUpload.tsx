@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Upload, X, FileText } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { supabase } from "../../../supabase/supabase";
+// Import BookPreProcessingService for EPUB preprocessing
+import { BookPreProcessingService } from "../../services/bookPreProcessingService";
 
 // Import SUPABASE_URL from environment variables
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
@@ -18,6 +20,9 @@ export default function DocumentUpload({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [preprocessingStatus, setPreprocessingStatus] = useState<string | null>(
+    null
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -40,6 +45,8 @@ export default function DocumentUpload({
   };
 
   const handleFileSelection = (file: File) => {
+    setPreprocessingStatus(null);
+
     // Check if file is a valid document type
     const validTypes = [
       "application/pdf",
@@ -66,128 +73,157 @@ export default function DocumentUpload({
   const handleUpload = async () => {
     if (!selectedFile) return;
 
+    // Check if the file is an EPUB for later processing
+    const isEpub =
+      selectedFile.type === "application/epub+zip" ||
+      selectedFile.type === "application/epub";
+
     setIsUploading(true);
     setUploadProgress(10);
 
     try {
-      // Create form data for the file upload
-      const formData = new FormData();
-      formData.append("file", selectedFile);
+      // Get the current user session
+      const { data: userData } = await supabase.auth.getSession();
+      const userId = userData.session?.user.id;
+
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
 
       setUploadProgress(30);
 
-      // Upload to Supabase via edge function
-      const { data: authData } = await supabase.auth.getSession();
-      const token = authData.session?.access_token;
-
-      if (!token) {
-        throw new Error("Authentication required");
-      }
-
-      // Log auth info for debugging (without exposing the full token)
-      console.log(`Auth token available: ${token ? "Yes" : "No"}`);
-      console.log(`Supabase URL: ${SUPABASE_URL}`);
+      // Generate a unique file path
+      const timestamp = Date.now();
+      const fileExt = selectedFile.name.split(".").pop();
+      const filePath = `${userId}/${timestamp}-${selectedFile.name}`;
 
       setUploadProgress(50);
 
-      // Log the URL we're trying to fetch for debugging
-      console.log(
-        `Attempting to fetch: ${SUPABASE_URL}/functions/v1/upload-document`
-      );
+      // Upload file to storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("documents")
+        .upload(filePath, selectedFile, {
+          contentType: selectedFile.type,
+          upsert: false,
+        });
 
-      const response = await fetch(
-        `${SUPABASE_URL}/functions/v1/upload-document`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        }
-      );
+      if (uploadError) throw uploadError;
 
-      setUploadProgress(80);
+      setUploadProgress(70);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to upload document");
-      }
+      // Create a record in the documents table (without document_id field)
+      const { data: documentData, error: documentError } = await supabase
+        .from("documents")
+        .insert({
+          user_id: userId,
+          title: selectedFile.name,
+          file_type: fileExt || "unknown",
+          file_size: `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`,
+          file_path: filePath,
+          created_at: new Date().toISOString(),
+        })
+        .select();
 
-      const result = await response.json();
+      if (documentError) throw documentError;
+
       setUploadProgress(100);
 
+      // Get the ID of the inserted document
+      const insertedDocumentId = documentData && documentData[0]?.id;
+      console.log("Inserted document ID:", insertedDocumentId);
+
+      // Complete the upload process
       setTimeout(() => {
         setIsUploading(false);
         onUploadComplete(selectedFile);
+
+        // Start EPUB preprocessing in the background if this is an EPUB file
+        if (isEpub && insertedDocumentId) {
+          console.log("Starting EPUB preprocessing for:", selectedFile.name);
+          setPreprocessingStatus(
+            `Preprocessing EPUB: ${selectedFile.name} (0%)`
+          );
+
+          // Use the actual document ID from the database
+          BookPreProcessingService.processBook(insertedDocumentId, selectedFile)
+            .then((processedBookId) => {
+              console.log(
+                "EPUB preprocessing completed. Processed book ID:",
+                processedBookId
+              );
+              setPreprocessingStatus(
+                `EPUB preprocessing complete: ${selectedFile.name}`
+              );
+
+              // Update the document record with the processed book ID if your schema supports it
+              // This is optional based on your database schema
+              try {
+                supabase
+                  .from("documents")
+                  .update({ processed_epub_id: processedBookId })
+                  .eq("id", insertedDocumentId)
+                  .then(({ error }) => {
+                    if (error) {
+                      console.error(
+                        "Note: Could not update document with processed book ID. This is optional:",
+                        error
+                      );
+                    } else {
+                      console.log(
+                        "Updated document record with processed book ID"
+                      );
+                    }
+                  });
+              } catch (updateError) {
+                console.error(
+                  "Note: Error trying to update document with processed book ID. This is optional:",
+                  updateError
+                );
+              }
+
+              // Clear status message after 5 seconds
+              setTimeout(() => {
+                setPreprocessingStatus(null);
+              }, 5000);
+            })
+            .catch((error) => {
+              console.error("Error preprocessing EPUB:", error);
+              setPreprocessingStatus(
+                `Error preprocessing EPUB: ${error.message}`
+              );
+
+              // Clear error message after 5 seconds
+              setTimeout(() => {
+                setPreprocessingStatus(null);
+              }, 5000);
+            });
+
+          // Set up polling to update the preprocessing status
+          const statusInterval = setInterval(() => {
+            const status =
+              BookPreProcessingService.getProcessingStatus(insertedDocumentId);
+            if (status.isProcessing) {
+              setPreprocessingStatus(
+                `Preprocessing EPUB: ${selectedFile.name} (${status.progress}%)`
+              );
+            } else if (status.error) {
+              clearInterval(statusInterval);
+            } else if (status.isProcessed) {
+              clearInterval(statusInterval);
+            }
+          }, 500);
+
+          // Clear interval after 5 minutes maximum to prevent memory leaks
+          setTimeout(() => {
+            clearInterval(statusInterval);
+          }, 5 * 60 * 1000);
+        }
+
         setSelectedFile(null);
         setUploadProgress(0);
       }, 500);
     } catch (error) {
       console.error("Upload error:", error);
-
-      // More detailed error logging
-      if (error instanceof Error) {
-        console.error("Error name:", error.name);
-        console.error("Error message:", error.message);
-        console.error("Error stack:", error.stack);
-      }
-
-      // Instead of simulating success, we'll directly upload to Supabase
-      if (error.message === "Failed to fetch") {
-        console.log("Edge function failed, using direct Supabase upload");
-        try {
-          // Get the current user session again to ensure we have it
-          const { data: userData } = await supabase.auth.getSession();
-          const userId = userData.session?.user.id;
-
-          if (!userId) {
-            throw new Error("User not authenticated");
-          }
-
-          // Generate a unique file path
-          const timestamp = Date.now();
-          const fileExt = selectedFile.name.split(".").pop();
-          const filePath = `${userId}/${timestamp}-${selectedFile.name}`;
-
-          // Upload file to storage
-          const { data: uploadData, error: uploadError } =
-            await supabase.storage
-              .from("documents")
-              .upload(filePath, selectedFile, {
-                contentType: selectedFile.type,
-                upsert: false,
-              });
-
-          if (uploadError) throw uploadError;
-
-          // Create a record in the documents table
-          const { data: documentData, error: documentError } = await supabase
-            .from("documents")
-            .insert({
-              user_id: userId,
-              title: selectedFile.name,
-              file_type: fileExt || "unknown",
-              file_size: `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`,
-              file_path: filePath,
-              created_at: new Date().toISOString(),
-            });
-
-          if (documentError) throw documentError;
-
-          setUploadProgress(100);
-          setTimeout(() => {
-            setIsUploading(false);
-            onUploadComplete(selectedFile);
-            setSelectedFile(null);
-            setUploadProgress(0);
-          }, 500);
-          return;
-        } catch (directUploadError) {
-          console.error("Direct upload error:", directUploadError);
-          throw directUploadError;
-        }
-      }
-
       alert(error.message || "Failed to upload document");
       setIsUploading(false);
       setUploadProgress(0);
@@ -271,6 +307,12 @@ export default function DocumentUpload({
               Upload Document
             </Button>
           )}
+        </div>
+      )}
+
+      {preprocessingStatus && (
+        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+          <p className="text-sm text-blue-600">{preprocessingStatus}</p>
         </div>
       )}
     </div>
