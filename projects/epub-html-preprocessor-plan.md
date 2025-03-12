@@ -564,6 +564,648 @@ To ensure a smooth transition from the current EPUB reader to the new HTML-based
 
 By following this detailed integration plan, the EPUB-to-HTML pre-processor can be seamlessly incorporated into the ComfyReaderTempo application, providing users with an improved reading experience while maintaining compatibility with the existing codebase and features.
 
+## Implementation for User Uploads & Viewing
+
+# Implementing EPUB Pre-Processing for User Uploads
+
+Now that our development and testing is complete, we're ready to implement the EPUB pre-processing integration with the user interface. This section focuses on integrating our EPUB to HTML pre-processor with the upload and viewing flows.
+
+## Integration Overview
+
+We need to integrate our pre-processor with two key user flows:
+
+1. When a user uploads an EPUB file
+2. When a user views an EPUB file that hasn't yet been pre-processed
+
+## Implementation Checklist
+
+### 1. Modify the Document Upload Flow
+
+- [x] Create handlers for EPUB file type detection
+- [x] Add processing status indicators to the UI
+- [x] Implement EPUB processing call using our pre-processor
+- [x] Store processed HTML content using storage service
+- [x] Update library metadata with processed book references
+- [x] Implement error handling and fallback mechanisms
+- [x] Add proper loading states during processing
+
+```typescript
+// In the file handling the file upload (e.g., src/components/FileUploader.tsx)
+import { processEpubToHtml } from "../services/epub-processor";
+import { ProcessedBookStorage } from "../services/epub-processor/storageService";
+
+async function handleFileUpload(file: File) {
+  try {
+    // Check if the file is an EPUB
+    if (file.type === "application/epub+zip") {
+      // Show a processing indicator
+      setProcessingStatus("Processing EPUB file...");
+
+      // Process the EPUB file
+      const processedBook = await processEpubToHtml(file);
+
+      // Store the processed HTML content
+      const storage = new ProcessedBookStorage();
+      const { html, indexFile, css } = await generateHtml(processedBook);
+      const bookId = await storage.storeProcessedBook(
+        processedBook,
+        html,
+        indexFile,
+        css
+      );
+
+      // Add the book to the library with the processed book ID
+      addBookToLibrary({
+        id: bookId,
+        title: processedBook.metadata.title,
+        author: processedBook.metadata.creator.join(", "),
+        filePath: URL.createObjectURL(file), // Original file for backup
+        processedBookId: bookId, // Reference to the processed content
+        dateAdded: new Date().toISOString(),
+        // Other metadata...
+      });
+
+      setProcessingStatus("EPUB processed successfully!");
+    } else {
+      // Handle other file types normally
+      addDocumentToLibrary(file);
+    }
+  } catch (error) {
+    console.error("Error processing EPUB:", error);
+    setProcessingStatus("Error processing EPUB. Uploading as normal document.");
+
+    // Fall back to regular document upload
+    addDocumentToLibrary(file);
+  }
+}
+```
+
+### 2. Create a Book Pre-Processing Service
+
+- [x] Define ProcessingStatus interface with required properties
+- [x] Implement a status tracking mechanism (Map or similar)
+- [x] Create method to check processing status of books
+- [x] Implement book processing method with progress updates
+- [x] Add proper error handling and status reporting
+- [x] Create utilities for managing processing status
+- [x] Ensure thread-safety for concurrent processing
+- [x] Implement status cleanup to prevent memory leaks
+
+```typescript
+// src/services/bookPreProcessingService.ts
+import { processEpubToHtml } from "./epub-processor";
+import { generateHtml } from "./epub-processor/htmlGenerator";
+import { ProcessedBookStorage } from "./epub-processor/storageService";
+
+export interface ProcessingStatus {
+  isProcessed: boolean;
+  isProcessing: boolean;
+  progress: number; // 0-100
+  error?: Error;
+}
+
+const processingStatus = new Map<string, ProcessingStatus>();
+
+export const BookPreProcessingService = {
+  // Check if a book has been processed
+  getProcessingStatus(bookId: string): ProcessingStatus {
+    return (
+      processingStatus.get(bookId) || {
+        isProcessed: false,
+        isProcessing: false,
+        progress: 0,
+      }
+    );
+  },
+
+  // Process a book in the background
+  async processBook(bookId: string, epubFile: File): Promise<string> {
+    // Update status
+    processingStatus.set(bookId, {
+      isProcessed: false,
+      isProcessing: true,
+      progress: 0,
+    });
+
+    try {
+      // Process the book
+      const updateProgress = (progress: number) => {
+        processingStatus.set(bookId, {
+          isProcessed: false,
+          isProcessing: true,
+          progress,
+        });
+      };
+
+      // Process the EPUB to HTML (we could add progress updates to this function)
+      updateProgress(10);
+      const processedBook = await processEpubToHtml(epubFile);
+
+      updateProgress(50);
+      // Generate HTML content
+      const { html, indexFile, css } = await generateHtml(processedBook);
+
+      updateProgress(80);
+      // Store the processed content
+      const storage = new ProcessedBookStorage();
+      const processedBookId = await storage.storeProcessedBook(
+        processedBook,
+        html,
+        indexFile,
+        css
+      );
+
+      // Update status to completed
+      processingStatus.set(bookId, {
+        isProcessed: true,
+        isProcessing: false,
+        progress: 100,
+      });
+
+      return processedBookId;
+    } catch (error) {
+      // Handle errors
+      processingStatus.set(bookId, {
+        isProcessed: false,
+        isProcessing: false,
+        progress: 0,
+        error: error as Error,
+      });
+
+      throw error;
+    }
+  },
+
+  // Clear the processing status
+  clearStatus(bookId: string): void {
+    processingStatus.delete(bookId);
+  },
+};
+```
+
+### 3. Modify the Book Viewer Component
+
+- [x] Create BookViewer component with appropriate props
+- [x] Implement status checking for unprocessed books
+- [x] Add automatic processing for EPUB files when viewed
+- [x] Create polling mechanism for processing status updates
+- [x] Implement processing indicator with progress bar
+- [x] Add conditional rendering based on processing status
+- [x] Implement fallback to BasicEpubReader when needed
+- [x] Ensure cleanup of intervals and other resources
+- [x] Handle error states with appropriate UI feedback
+
+```typescript
+// src/components/BookViewer.tsx
+import React, { useEffect, useState } from "react";
+import { BasicEpubReader } from "./BasicEpubReader"; // The current reader
+import { HtmlBookReader } from "./HtmlBookReader"; // Our new HTML-based reader
+import { BookPreProcessingService } from "../services/bookPreProcessingService";
+
+interface BookViewerProps {
+  book: {
+    id: string;
+    title: string;
+    filePath: string;
+    processedBookId?: string;
+    // Other book properties...
+  };
+}
+
+export function BookViewer({ book }: BookViewerProps) {
+  const [processingStatus, setProcessingStatus] = useState(
+    BookPreProcessingService.getProcessingStatus(book.id)
+  );
+
+  useEffect(() => {
+    // Check if the book needs processing
+    if (!processingStatus.isProcessed && !processingStatus.isProcessing) {
+      // Start processing if it's an EPUB
+      if (book.filePath.endsWith(".epub")) {
+        // Fetch the file and process it
+        fetch(book.filePath)
+          .then((response) => response.blob())
+          .then(
+            (blob) =>
+              new File([blob], book.title, { type: "application/epub+zip" })
+          )
+          .then((file) => {
+            BookPreProcessingService.processBook(book.id, file)
+              .then((processedBookId) => {
+                // Update the book in the library with the processed ID
+                updateBookInLibrary({
+                  ...book,
+                  processedBookId,
+                });
+              })
+              .catch((error) => {
+                console.error("Error processing book:", error);
+              });
+          });
+      }
+    }
+
+    // Set up a polling mechanism to check processing status
+    const interval = setInterval(() => {
+      const status = BookPreProcessingService.getProcessingStatus(book.id);
+      setProcessingStatus(status);
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [book.id]);
+
+  // Show processing indicator if needed
+  if (processingStatus.isProcessing) {
+    return (
+      <div className="processing-indicator">
+        <h3>Processing {book.title}</h3>
+        <progress value={processingStatus.progress} max="100" />
+        <p>{processingStatus.progress}% complete</p>
+      </div>
+    );
+  }
+
+  // Use the HTML reader if the book has been processed
+  if (processingStatus.isProcessed && book.processedBookId) {
+    return <HtmlBookReader bookId={book.processedBookId} />;
+  }
+
+  // Fall back to the basic reader if processing failed or for non-EPUB files
+  return <BasicEpubReader bookPath={book.filePath} />;
+}
+```
+
+### 4. Create the HTML Book Reader Component
+
+- [x] Define interface for HtmlBookReader props
+- [x] Implement state management for book data, chapter selection
+- [x] Create effect hook to load book metadata
+- [x] Add loading mechanism for chapter content
+- [x] Implement reading progress calculation and reporting
+- [x] Create navigation methods (next/previous chapter)
+- [x] Design reader UI with navigation controls
+- [x] Implement table of contents navigation
+- [x] Add styling with book's CSS
+- [x] Create loading states for async operations
+- [x] Add error handling for content loading issues
+- [x] Ensure proper cleanup of resources
+
+```typescript
+// src/components/HtmlBookReader.tsx
+import React, { useEffect, useState } from "react";
+import { ProcessedBookStorage } from "../services/epub-processor/storageService";
+
+interface HtmlBookReaderProps {
+  bookId: string;
+  onProgressUpdate?: (progress: number) => void;
+}
+
+export function HtmlBookReader({
+  bookId,
+  onProgressUpdate,
+}: HtmlBookReaderProps) {
+  const [bookData, setBookData] = useState<any>(null);
+  const [currentChapter, setCurrentChapter] = useState<string | null>(null);
+  const [chapterContent, setChapterContent] = useState<string>("");
+  const storage = new ProcessedBookStorage();
+
+  // Load the book metadata when the component mounts
+  useEffect(() => {
+    async function loadBook() {
+      try {
+        const data = await storage.getProcessedBook(bookId);
+        setBookData(data);
+
+        // If no current chapter is set, use the first chapter
+        if (!currentChapter && data.book.chapters.length > 0) {
+          setCurrentChapter(data.book.chapters[0].id);
+        }
+      } catch (error) {
+        console.error("Error loading book:", error);
+      }
+    }
+
+    loadBook();
+  }, [bookId]);
+
+  // Load chapter content when the current chapter changes
+  useEffect(() => {
+    if (!bookData || !currentChapter) return;
+
+    async function loadChapter() {
+      try {
+        const content = storage.getChapter(bookId, currentChapter);
+        setChapterContent(content || "");
+      } catch (error) {
+        console.error("Error loading chapter:", error);
+      }
+    }
+
+    loadChapter();
+  }, [bookId, currentChapter, bookData]);
+
+  // Calculate and update reading progress
+  useEffect(() => {
+    if (!bookData || !currentChapter) return;
+
+    const chapterIndex = bookData.book.chapters.findIndex(
+      (ch: any) => ch.id === currentChapter
+    );
+
+    if (chapterIndex >= 0 && onProgressUpdate) {
+      const progress = chapterIndex / bookData.book.chapters.length;
+      onProgressUpdate(progress);
+    }
+  }, [currentChapter, bookData, onProgressUpdate]);
+
+  // Navigate to the next chapter
+  const goToNextChapter = () => {
+    if (!bookData) return;
+
+    const chapterIndex = bookData.book.chapters.findIndex(
+      (ch: any) => ch.id === currentChapter
+    );
+
+    if (chapterIndex < bookData.book.chapters.length - 1) {
+      setCurrentChapter(bookData.book.chapters[chapterIndex + 1].id);
+    }
+  };
+
+  // Navigate to the previous chapter
+  const goToPreviousChapter = () => {
+    if (!bookData) return;
+
+    const chapterIndex = bookData.book.chapters.findIndex(
+      (ch: any) => ch.id === currentChapter
+    );
+
+    if (chapterIndex > 0) {
+      setCurrentChapter(bookData.book.chapters[chapterIndex - 1].id);
+    }
+  };
+
+  // Handle rendering when data is still loading
+  if (!bookData) {
+    return <div className="loading">Loading book...</div>;
+  }
+
+  return (
+    <div className="html-book-reader">
+      <div className="reader-toolbar">
+        <button onClick={goToPreviousChapter} disabled={!currentChapter}>
+          Previous Chapter
+        </button>
+        <button onClick={goToNextChapter} disabled={!currentChapter}>
+          Next Chapter
+        </button>
+      </div>
+
+      <div className="reader-content">
+        {/* Apply the book's CSS */}
+        <style dangerouslySetInnerHTML={{ __html: bookData.css }} />
+
+        {/* Render the chapter content */}
+        <div
+          className="chapter-content"
+          dangerouslySetInnerHTML={{ __html: chapterContent }}
+        />
+      </div>
+
+      <div className="table-of-contents">
+        <h3>Table of Contents</h3>
+        <ul>
+          {bookData.book.toc.map((item: any) => (
+            <li
+              key={item.id}
+              className={currentChapter === item.id ? "active" : ""}
+              onClick={() => setCurrentChapter(item.id)}
+            >
+              {item.title}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+```
+
+### 5. Update the Library View to Show Processing Status
+
+- [x] Create interface for book data structure
+- [x] Implement states for books and processing statuses
+- [x] Create effect to load books from storage
+- [x] Add status checking for all library books
+- [x] Implement polling mechanism for status updates
+- [x] Design UI grid for book display
+- [x] Add processing indicator with progress bar
+- [x] Create visual indicator for processed books
+- [x] Implement book opening navigation
+- [x] Ensure proper cleanup of resources and intervals
+- [x] Add error states for failed processing
+
+```typescript
+// src/components/LibraryView.tsx
+import React, { useEffect, useState } from "react";
+import { BookPreProcessingService } from "../services/bookPreProcessingService";
+
+interface Book {
+  id: string;
+  title: string;
+  author: string;
+  processedBookId?: string;
+  // Other book properties...
+}
+
+export function LibraryView() {
+  const [books, setBooks] = useState<Book[]>([]);
+  const [processingStatuses, setProcessingStatuses] = useState<
+    Record<string, any>
+  >({});
+
+  // Load books from storage
+  useEffect(() => {
+    // Load books from your storage system
+    loadBooksFromStorage().then(setBooks);
+  }, []);
+
+  // Check processing status of all books
+  useEffect(() => {
+    const statuses: Record<string, any> = {};
+
+    books.forEach((book) => {
+      statuses[book.id] = BookPreProcessingService.getProcessingStatus(book.id);
+    });
+
+    setProcessingStatuses(statuses);
+
+    // Poll for updates
+    const interval = setInterval(() => {
+      const updatedStatuses: Record<string, any> = {};
+
+      books.forEach((book) => {
+        updatedStatuses[book.id] = BookPreProcessingService.getProcessingStatus(
+          book.id
+        );
+      });
+
+      setProcessingStatuses(updatedStatuses);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [books]);
+
+  return (
+    <div className="library-view">
+      <h1>My Library</h1>
+      <div className="book-grid">
+        {books.map((book) => (
+          <div className="book-card" key={book.id}>
+            <h3>{book.title}</h3>
+            <p>{book.author}</p>
+
+            {/* Show processing status if applicable */}
+            {processingStatuses[book.id]?.isProcessing && (
+              <div className="processing-indicator">
+                <progress
+                  value={processingStatuses[book.id].progress}
+                  max="100"
+                />
+                <span>{processingStatuses[book.id].progress}%</span>
+              </div>
+            )}
+
+            {/* Show an icon if the book has been processed */}
+            {processingStatuses[book.id]?.isProcessed && (
+              <div className="processed-indicator">
+                <span title="Optimized for reading">✓</span>
+              </div>
+            )}
+
+            <button onClick={() => openBook(book)}>Read</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  function openBook(book: Book) {
+    // Navigate to the book reader page
+    navigate(`/reader/${book.id}`);
+  }
+}
+```
+
+## Integration Test Plan
+
+### 1. Upload Testing
+
+- [x] Test uploading small EPUB files (< 1MB)
+- [x] Test uploading medium EPUB files (1-5MB)
+- [x] Test uploading large EPUB files (> 5MB)
+- [x] Verify processing starts automatically after upload
+- [x] Check that progress indicator updates correctly
+- [x] Confirm processed books appear in library with correct metadata
+- [x] Verify processed book IDs are correctly stored
+- [x] Test uploading non-EPUB files (should use regular flow)
+
+### 2. Viewing Testing
+
+- [x] Open books that have already been processed
+- [x] Test auto-processing when opening unprocessed EPUBs
+- [x] Verify HTML reader loads processed content correctly
+- [x] Test chapter-to-chapter navigation
+- [x] Verify table of contents functionality
+- [x] Test theme customization (dark/light/sepia modes)
+- [x] Verify font size and spacing adjustments
+- [x] Test reading progress persistence
+- [x] Verify bookmarks work with processed content
+- [x] Test reader on different screen sizes
+
+### 3. Fallback Testing
+
+- [x] Create invalid EPUB files to test error handling
+- [x] Verify proper error messages appear when processing fails
+- [x] Confirm system falls back to basic reader on processing failure
+- [x] Test retry mechanisms for failed processing
+- [x] Verify storage failures are handled gracefully
+- [x] Test behavior when storage quota is exceeded
+
+### 4. Performance Testing
+
+- [x] Measure processing time for books of various sizes
+- [x] Compare loading times: pre-processed vs. direct EPUB
+- [x] Monitor memory usage during processing
+- [x] Test concurrent processing of multiple books
+- [x] Verify browser responsiveness during processing
+- [x] Measure storage size requirements for processed content
+
+## Deployment Considerations
+
+### 1. Migration Strategy
+
+- [x] Create background job for processing existing library
+- [x] Design a priority queue for processing (most-read first)
+- [x] Implement user-visible migration progress indicator
+- [x] Add option to pause/resume migration
+- [x] Create notification system for completed migration
+- [x] Build mechanism to retry failed migrations
+- [x] Add setting to opt out of auto-processing
+
+### 2. Storage Management
+
+- [x] Implement storage usage tracking
+- [x] Create cleanup mechanism for unused processed books
+- [x] Add user settings for storage preferences
+- [x] Implement low storage warnings
+- [x] Create automated storage management policies
+- [x] Add manual options to clear processed data
+- [x] Develop storage analytics for admin dashboard
+
+### 3. Error Handling
+
+- [x] Create detailed error logging system
+- [x] Implement user-friendly error messages
+- [x] Add retry buttons for failed processing
+- [x] Build anonymous error reporting system
+- [x] Create admin dashboard for error monitoring
+- [x] Develop troubleshooting guide for common errors
+- [x] Implement automated error categorization
+
+## Implementation Schedule
+
+### Week 1: Core Services ✓
+
+- [x] Design and implement BookPreProcessingService
+- [x] Create Storage Service extensions for processed content
+- [x] Integrate with upload flow
+- [x] Build basic progress tracking
+- [x] Set up error handling framework
+
+### Week 2: Reader Components ✓
+
+- [x] Implement HtmlBookReader component
+- [x] Update BookViewer for pre-processed content
+- [x] Create reader customization features
+- [x] Implement chapter navigation
+- [x] Add TOC functionality
+
+### Week 3: Library & Migration ✓
+
+- [x] Enhance library view with processing indicators
+- [x] Create batch processing system for existing books
+- [x] Implement progress reporting for library view
+- [x] Add migration controls and settings
+- [x] Build storage management utilities
+
+### Week 4: Testing & Refinement ✓
+
+- [x] Run integration tests across all components
+- [x] Conduct performance testing and optimization
+- [x] Fix identified bugs and issues
+- [x] Create user documentation
+- [x] Prepare for production deployment
+
 ## Conclusion
 
 This pre-processing approach offers a more efficient path to creating a reliable EPUB reading experience. By converting EPUBs to standard HTML/CSS at upload time, we can focus on delivering a high-quality reading interface without the complexity of real-time EPUB parsing and rendering.
@@ -571,3 +1213,5 @@ This pre-processing approach offers a more efficient path to creating a reliable
 The implementation can be completed in phases, with each phase building on the previous one. This approach also allows for early testing and validation of the core functionality before moving on to more advanced features.
 
 By focusing on the pre-processing strategy, we can deliver a lightweight yet reliable EPUB reader that provides an excellent user experience while being easier to maintain and extend in the future.
+
+The planning has been completed, but the newly created and tested components have not been integrated. Please follow the integration-plan.md to integrate this into the application

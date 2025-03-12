@@ -1,0 +1,355 @@
+.html-book-reader {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Themes */
+.theme-light {
+  --bg-color: #ffffff;
+  --text-color: #333333;
+  --header-bg: #f5f5f5;
+  --border-color: #e0e0e0;
+  --accent-color: #0077cc;
+  --button-bg: #f0f0f0;
+  --button-hover: #e0e0e0;
+  --toc-bg: #f9f9f9;
+  --toc-hover: #eeeeee;
+  --toc-active: #e3f2fd;
+  --error-color: #d32f2f;
+  --control-opacity: 0.8;
+}
+
+.theme-dark {
+  --bg-color: #222222;
+  --text-color: #dddddd;
+  --header-bg: #333333;
+  --border-color: #444444;
+  --accent-color: #4fc3f7;
+  --button-bg: #424242;
+  --button-hover: #505050;
+  --toc-bg: #2a2a2a;
+  --toc-hover: #383838;
+  --toc-active: #3d5afe33;
+  --error-color: #ff6d6d;
+  --control-opacity: 0.85;
+}
+
+.theme-sepia {
+  --bg-color: #f5efe0;
+  --text-color: #5b4636;
+  --header-bg: #e8dccc;
+  --border-color: #d8ccbc;
+  --accent-color: #8b6b4c;
+  --button-bg: #e0d4c4;
+  --button-hover: #d6c8b8;
+  --toc-bg: #f0e8d8;
+  --toc-hover: #e6dec8;
+  --toc-active: #d4c5aa;
+  --error-color: #b24040;
+  --control-opacity: 0.85;
+}
+
+/* Apply theme colors */
+.html-book-reader {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+/* Reader Header */
+.reader-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: var(--header-bg);
+  border-bottom: 1px solid var(--border-color);
+  min-height: 60px;
+}
+
+.reader-title {
+  flex: 1;
+  overflow: hidden;
+}
+
+.reader-title h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-title h2 {
+  margin: 4px 0 0 0;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-color);
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.control-button {
+  background-color: var(--button-bg);
+  border: none;
+  border-radius: 4px;
+  padding: 8px;
+  cursor: pointer;
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.control-button:hover:not(:disabled) {
+  background-color: var(--button-hover);
+}
+
+.control-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.control-icon {
+  font-size: 16px;
+  display: block;
+}
+
+/* Reader Layout */
+.reader-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Table of Contents */
+.table-of-contents {
+  width: 280px;
+  background-color: var(--toc-bg);
+  border-right: 1px solid var(--border-color);
+  overflow-y: auto;
+  height: 100%;
+  padding: 16px;
+}
+
+.table-of-contents h3 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.table-of-contents ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.table-of-contents li {
+  margin-bottom: 4px;
+}
+
+.table-of-contents button {
+  background: none;
+  border: none;
+  text-align: left;
+  width: 100%;
+  padding: 8px;
+  border-radius: 4px;
+  color: var(--text-color);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.table-of-contents button:hover {
+  background-color: var(--toc-hover);
+}
+
+.table-of-contents li.active button {
+  background-color: var(--toc-active);
+  font-weight: 500;
+}
+
+.toc-level-1 {
+  padding-left: 0;
+}
+.toc-level-2 {
+  padding-left: 16px;
+}
+.toc-level-3 {
+  padding-left: 32px;
+}
+.toc-level-4 {
+  padding-left: 48px;
+}
+
+/* Reader Content */
+.reader-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  height: 100%;
+  position: relative;
+}
+
+.chapter-content {
+  max-width: 800px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+/* Chapter Loading Indicator */
+.chapter-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: var(--bg-color);
+  opacity: 0.9;
+  z-index: 10;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-left-color: var(--accent-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Chapter Error */
+.chapter-error {
+  padding: 16px;
+  margin: 16px 0;
+  background-color: rgba(255, 0, 0, 0.05);
+  border-left: 4px solid var(--error-color);
+  color: var(--error-color);
+}
+
+.chapter-error button {
+  background-color: var(--error-color);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+/* Book Loading/Error States */
+.html-book-reader-loading,
+.html-book-reader-error {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  padding: 20px;
+}
+
+.html-book-reader-error h3 {
+  margin-top: 0;
+  color: var(--error-color);
+}
+
+.html-book-reader-error button {
+  background-color: var(--accent-color);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 16px;
+}
+
+/* Navigation Controls */
+.reader-navigation {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: var(--header-bg);
+  border-top: 1px solid var(--border-color);
+}
+
+.nav-button {
+  background-color: var(--button-bg);
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  cursor: pointer;
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s ease;
+}
+
+.nav-button:hover:not(:disabled) {
+  background-color: var(--button-hover);
+}
+
+.nav-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chapter-info {
+  font-size: 14px;
+  color: var(--text-color);
+  opacity: 0.8;
+}
+
+/* Responsive adaptations */
+@media (max-width: 768px) {
+  .reader-controls {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    flex-direction: column;
+    background-color: var(--header-bg);
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    padding: 8px;
+    opacity: var(--control-opacity);
+    transition: opacity 0.3s ease;
+  }
+
+  .reader-controls:hover {
+    opacity: 1;
+  }
+
+  .table-of-contents {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 80%;
+    max-width: 300px;
+    height: 100%;
+    z-index: 100;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+  }
+}

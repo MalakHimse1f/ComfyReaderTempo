@@ -1,0 +1,265 @@
+.library-view {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.library-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.library-header h1 {
+  margin: 0;
+  font-size: 24px;
+  color: #333;
+}
+
+.processing-stats {
+  background-color: #e3f2fd;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  color: #0277bd;
+}
+
+.empty-library {
+  text-align: center;
+  padding: 40px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  color: #666;
+}
+
+.book-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 24px;
+}
+
+.book-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.book-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.book-cover {
+  position: relative;
+  height: 260px;
+  background-color: #efefef;
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+}
+
+.book-cover-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 48px;
+  color: #bbb;
+  background-color: #f2f2f2;
+}
+
+.processing-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.processing-indicator {
+  width: 80%;
+  text-align: center;
+}
+
+.progress-bar {
+  height: 8px;
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: #ffffff;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  color: #fff;
+  font-size: 12px;
+}
+
+.processed-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #4caf50;
+  color: white;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.error-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #f44336;
+  color: white;
+  font-size: 14px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.book-info {
+  padding: 16px;
+  flex: 1;
+}
+
+.book-title {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  color: #333;
+  display: -webkit-box;
+  display: box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.book-title:hover {
+  color: #0077cc;
+}
+
+.book-author {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.book-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 12px;
+  color: #888;
+}
+
+.book-actions {
+  display: flex;
+  padding: 12px 16px;
+  background-color: #f9f9f9;
+  border-top: 1px solid #eee;
+  gap: 8px;
+}
+
+.action-button {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: center;
+  transition: background-color 0.2s ease;
+}
+
+.read-button {
+  background-color: #0077cc;
+  color: white;
+}
+
+.read-button:hover {
+  background-color: #005fa3;
+}
+
+.process-button {
+  background-color: #f5f5f5;
+  color: #333;
+}
+
+.process-button:hover {
+  background-color: #e0e0e0;
+}
+
+.retry-button {
+  background-color: #ff9800;
+  color: white;
+}
+
+.retry-button:hover {
+  background-color: #f57c00;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .book-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px;
+  }
+
+  .book-cover {
+    height: 200px;
+  }
+
+  .book-actions {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .book-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
+
+  .book-cover {
+    height: 180px;
+  }
+
+  .book-info {
+    padding: 12px;
+  }
+
+  .book-title {
+    font-size: 14px;
+  }
+}
