@@ -55,6 +55,19 @@ export class MockStorage {
   get length(): number {
     return Object.keys(this.store).length;
   }
+
+  // Make the mock object appear like a real object for Object.keys()
+  *[Symbol.iterator]() {
+    for (const key of Object.keys(this.store)) {
+      yield [key, this.store[key]];
+    }
+  }
+
+  // Return all keys when Object.keys is called on this object
+  // This is used by the implementation of deleteProcessedBook
+  get keys() {
+    return Object.keys(this.store);
+  }
 }
 
 /**
