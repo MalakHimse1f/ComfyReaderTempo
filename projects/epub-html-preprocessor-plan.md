@@ -1206,6 +1206,69 @@ export function LibraryView() {
 - [x] Create user documentation
 - [x] Prepare for production deployment
 
+## Phase 5: Database Schema Updates
+
+During our integration testing, we've identified a critical issue with the database schema that prevents processed EPUBs from being displayed in the library. The application code attempts to use fields that don't exist in the database schema, resulting in silent failures.
+
+### Issue Analysis
+
+The root cause is that the EPUB processing system attempts to update the document database record with `is_processed: true` and `processed_epub_id: [ID]` when processing is complete, but these columns don't exist in the Supabase database. This causes the following issues:
+
+1. Processed EPUBs are successfully generated and stored in IndexedDB and cloud storage
+2. But the database update fails because the columns don't exist
+3. As a result, the library can't identify which books have been processed
+4. This prevents the UI from showing the optimized versions of processed books
+
+### Tasks to Resolve the Issue
+
+- [ ] **Database Schema Update**
+
+  - [ ] Log into Supabase dashboard
+  - [ ] Navigate to the Database section
+  - [ ] Find the "documents" table
+  - [ ] Add column `is_processed` (boolean, nullable, default: false)
+  - [ ] Add column `processed_epub_id` (text, nullable)
+  - [ ] Update database migrations if applicable
+
+- [ ] **TypeScript Schema Update**
+
+  - [ ] Update `src/types/supabase.ts` to include the new fields:
+    ```typescript
+    documents: {
+      Row: {
+        // Existing fields...
+        is_processed: boolean | null;
+        processed_epub_id: string | null;
+      }
+      // Update Insert and Update interfaces as well
+    }
+    ```
+
+- [ ] **Error Handling Improvement**
+
+  - [ ] Update `DocumentUpload.tsx` to include better error logging for database updates
+  - [ ] Add retry logic for failed database updates after successful processing
+  - [ ] Implement a manual "re-link" feature for processed books that weren't correctly linked
+
+- [ ] **Processed Book Recovery**
+  - [ ] Create a utility script to find orphaned processed books (those in storage but not linked in the database)
+  - [ ] Implement a function to match orphaned processed books with their original documents
+  - [ ] Add UI for users to force sync the database with processed books in storage
+
+### Why This Update Is Necessary
+
+1. **Prevents Data Loss**: Without the database schema update, information about which books have been processed is lost, wasting storage and processing time.
+
+2. **Improves User Experience**: Users currently can't see which books have been optimized, leading to confusion when some books render differently than others.
+
+3. **Ensures Feature Functionality**: The entire EPUB pre-processing system relies on the ability to track which books have been processed and to associate the processed versions with the original documents.
+
+4. **Prevents Repeated Processing**: Without proper tracking, the system might repeatedly process the same book when opened, wasting resources and causing delays.
+
+5. **Enables Cloud Synchronization**: The cloud synchronization feature relies on proper database records to determine which books should be synced and to maintain the relationship between original and processed versions.
+
+This critical database schema update should be implemented immediately to ensure the proper functioning of the EPUB processing system and to improve the user experience.
+
 ## Conclusion
 
 This pre-processing approach offers a more efficient path to creating a reliable EPUB reading experience. By converting EPUBs to standard HTML/CSS at upload time, we can focus on delivering a high-quality reading interface without the complexity of real-time EPUB parsing and rendering.
@@ -1214,4 +1277,4 @@ The implementation can be completed in phases, with each phase building on the p
 
 By focusing on the pre-processing strategy, we can deliver a lightweight yet reliable EPUB reader that provides an excellent user experience while being easier to maintain and extend in the future.
 
-The planning has been completed, but the newly created and tested components have not been integrated. Please follow the integration-plan.md to integrate this into the application
+The planning has been completed, but the newly created and tested components have not been fully integrated. Please complete phase 5, then follow the integration-plan.md to fully integrate this into the application.

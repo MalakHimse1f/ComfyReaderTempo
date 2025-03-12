@@ -126,9 +126,13 @@ export default function DocumentLibrary({
 
     setProcessingStatuses(initialStatuses);
 
+    // Track which documents were previously processing
+    const previouslyProcessing = new Set<string>();
+
     // Poll for status updates
     const intervalId = setInterval(() => {
       const updatedStatuses: { [key: string]: ProcessingStatus } = {};
+      let statusChanged = false;
 
       documents.forEach((doc) => {
         // Only check EPUBs that are already processed or have a processedEpubId
@@ -136,12 +140,37 @@ export default function DocumentLibrary({
           doc.fileType.toLowerCase() === "epub" &&
           (doc.isProcessed || doc.processedEpubId)
         ) {
-          updatedStatuses[doc.id] =
-            BookPreProcessingService.getProcessingStatus(doc.id);
+          const newStatus = BookPreProcessingService.getProcessingStatus(
+            doc.id
+          );
+          updatedStatuses[doc.id] = newStatus;
+
+          // Check if status changed from processing to processed
+          const wasProcessing =
+            processingStatuses[doc.id]?.status === "processing" ||
+            previouslyProcessing.has(doc.id);
+          const isNowProcessed = newStatus.status === "processed";
+
+          if (wasProcessing && isNowProcessed) {
+            statusChanged = true;
+            console.log(
+              `Document ${doc.id} is now processed, refreshing library`
+            );
+          }
+
+          // Track documents that are processing
+          if (newStatus.status === "processing") {
+            previouslyProcessing.add(doc.id);
+          }
         }
       });
 
       setProcessingStatuses(updatedStatuses);
+
+      // If any document changed from processing to processed, refresh the document list
+      if (statusChanged) {
+        fetchDocuments();
+      }
     }, 1000);
 
     return () => clearInterval(intervalId);
@@ -163,47 +192,73 @@ export default function DocumentLibrary({
       const offlineDocuments = await getAllOfflineDocumentMetadata();
       const offlineDocIds = offlineDocuments.map((doc) => doc.id);
 
-      const formattedDocs: DocumentItem[] = data.map((doc) => {
-        // Log the reading progress data for debugging
-        console.log(
-          `Document ${doc.id} reading progress:`,
-          doc.reading_progress
-        );
+      // Track processed EPUB IDs to filter out original EPUBs
+      const processedBookIds = new Set<string>();
 
-        // Parse reading progress, handling different data types
-        let progress = 0;
-        if (doc.reading_progress && doc.reading_progress.progress) {
-          // Handle both number and string formats
-          const progressValue = doc.reading_progress.progress;
-          progress =
-            typeof progressValue === "string"
-              ? parseInt(progressValue)
-              : progressValue;
-
-          // Ensure it's a valid number
-          if (isNaN(progress)) progress = 0;
-
-          console.log(`Parsed progress for ${doc.id}: ${progress}%`);
+      // First pass: identify all processed EPUB IDs
+      data.forEach((doc) => {
+        if (doc.processed_epub_id) {
+          processedBookIds.add(doc.id);
         }
-
-        // Check if this is an is_processed field exists (gracefully handle if not)
-        const isProcessed = doc.is_processed === true;
-        const processedEpubId = doc.processed_epub_id || undefined;
-
-        return {
-          id: doc.id,
-          title: doc.title,
-          fileType: doc.file_type,
-          fileSize: doc.file_size,
-          uploadDate: new Date(doc.created_at),
-          lastOpened: doc.last_opened ? new Date(doc.last_opened) : undefined,
-          thumbnailUrl: doc.thumbnail_url,
-          isOffline: offlineDocIds.includes(doc.id),
-          readingProgress: progress,
-          isProcessed: isProcessed,
-          processedEpubId: processedEpubId,
-        };
       });
+
+      // Second pass: format and filter documents
+      const formattedDocs: DocumentItem[] = data
+        .filter((doc) => {
+          // Filter out original EPUB files that have NOT been processed
+          // We want to keep:
+          // 1. Non-EPUB files
+          // 2. EPUB files that have been processed
+          const isEpub = doc.file_type?.toLowerCase() === "epub";
+          return !isEpub || doc.is_processed === true;
+        })
+        .map((doc) => {
+          // Log the reading progress data for debugging
+          console.log(
+            `Document ${doc.id} reading progress:`,
+            doc.reading_progress
+          );
+
+          // Parse reading progress, handling different data types
+          let progress = 0;
+          if (doc.reading_progress && doc.reading_progress.progress) {
+            // Handle both number and string formats
+            const progressValue = doc.reading_progress.progress;
+            progress =
+              typeof progressValue === "string"
+                ? parseInt(progressValue)
+                : progressValue;
+
+            // Ensure it's a valid number
+            if (isNaN(progress)) progress = 0;
+
+            console.log(`Parsed progress for ${doc.id}: ${progress}%`);
+          }
+
+          // Check if this is a processed EPUB
+          const isProcessed = doc.is_processed === true;
+          const processedEpubId = doc.processed_epub_id || undefined;
+
+          // For processed EPUBs, modify the fileType to indicate it's the processed version
+          const fileType =
+            isProcessed && doc.file_type?.toLowerCase() === "epub"
+              ? "optimized-epub"
+              : doc.file_type;
+
+          return {
+            id: doc.id,
+            title: doc.title,
+            fileType: fileType,
+            fileSize: doc.file_size,
+            uploadDate: new Date(doc.created_at),
+            lastOpened: doc.last_opened ? new Date(doc.last_opened) : undefined,
+            thumbnailUrl: doc.thumbnail_url,
+            isOffline: offlineDocIds.includes(doc.id),
+            readingProgress: progress,
+            isProcessed: isProcessed,
+            processedEpubId: processedEpubId,
+          };
+        });
 
       setDocuments(formattedDocs);
     } catch (error) {
@@ -262,7 +317,25 @@ export default function DocumentLibrary({
         return;
       }
 
-      // For online documents, update last_opened timestamp
+      // Check if document is an optimized EPUB
+      if (
+        doc.fileType.toLowerCase() === "optimized-epub" &&
+        doc.processedEpubId
+      ) {
+        console.log(`Opening optimized EPUB with ID: ${doc.processedEpubId}`);
+
+        // Update last_opened timestamp first
+        await supabase
+          .from("documents")
+          .update({ last_opened: new Date().toISOString() })
+          .eq("id", doc.id);
+
+        // Navigate to document reader view with processed EPUB ID
+        window.location.href = `/dashboard?view=reader&id=${doc.id}&epubId=${doc.processedEpubId}`;
+        return;
+      }
+
+      // For regular online documents, update last_opened timestamp
       await supabase
         .from("documents")
         .update({ last_opened: new Date().toISOString() })
@@ -273,7 +346,16 @@ export default function DocumentLibrary({
     } catch (error) {
       console.error("Error opening document:", error);
       // Navigate anyway even if the update fails
-      window.location.href = `/dashboard?view=reader&id=${doc.id}`;
+
+      // If it's an optimized EPUB, include the processed ID in the URL
+      if (
+        doc.fileType.toLowerCase() === "optimized-epub" &&
+        doc.processedEpubId
+      ) {
+        window.location.href = `/dashboard?view=reader&id=${doc.id}&epubId=${doc.processedEpubId}`;
+      } else {
+        window.location.href = `/dashboard?view=reader&id=${doc.id}`;
+      }
     }
   };
 

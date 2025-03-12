@@ -7,6 +7,7 @@ import {
   ExternalLink,
   WifiOff,
   Check,
+  BookOpen,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useState, useEffect } from "react";
@@ -90,9 +91,19 @@ export default function DocumentCard({
         return <FileText className="h-12 w-12 text-gray-500" />;
       case "epub":
         return <FileText className="h-12 w-12 text-green-500" />;
+      case "optimized-epub":
+        return <BookOpen className="h-12 w-12 text-purple-500" />;
       default:
         return <FileText className="h-12 w-12 text-gray-500" />;
     }
+  };
+
+  // Helper function to get formatted file type label
+  const getFileTypeLabel = () => {
+    if (document.fileType.toLowerCase() === "optimized-epub") {
+      return "OPTIMIZED EPUB";
+    }
+    return document.fileType.toUpperCase();
   };
 
   if (view === "list") {
@@ -110,7 +121,15 @@ export default function DocumentCard({
         <div className="flex-grow">
           <h3 className="font-medium text-lg">{document.title}</h3>
           <div className="flex text-sm text-gray-500 space-x-4">
-            <span>{document.fileType.toUpperCase()}</span>
+            <span
+              className={
+                document.fileType.toLowerCase() === "optimized-epub"
+                  ? "text-purple-500 font-medium"
+                  : ""
+              }
+            >
+              {getFileTypeLabel()}
+            </span>
             <span>{document.fileSize}</span>
             <span>
               Uploaded{" "}
@@ -207,9 +226,21 @@ export default function DocumentCard({
         ) : (
           <div className="flex flex-col items-center justify-center">
             {getFileIcon()}
-            <span className="mt-2 text-sm font-medium">
-              {document.fileType.toUpperCase()}
+            <span
+              className={`mt-2 text-sm font-medium ${
+                document.fileType.toLowerCase() === "optimized-epub"
+                  ? "text-purple-500"
+                  : ""
+              }`}
+            >
+              {getFileTypeLabel()}
             </span>
+          </div>
+        )}
+
+        {document.fileType.toLowerCase() === "optimized-epub" && (
+          <div className="absolute top-2 left-2 px-2 py-1 bg-purple-100 text-purple-800 text-xs font-semibold rounded">
+            Optimized
           </div>
         )}
 

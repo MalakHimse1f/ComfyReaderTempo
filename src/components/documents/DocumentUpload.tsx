@@ -197,20 +197,34 @@ export default function DocumentUpload({
       await syncBookToCloud(processedId);
 
       // Try to update the document entry to show it's processed
-      // The update will fail if the column doesn't exist, but we'll handle that gracefully
       try {
-        await supabase
+        const { error: updateError } = await supabase
           .from("documents")
           .update({
             is_processed: true,
             processed_epub_id: processedId,
           })
           .eq("id", insertedDocumentId);
+
+        if (updateError) {
+          // Check if it's a column doesn't exist error
+          if (updateError.message && updateError.message.includes("column")) {
+            console.log(
+              "Note: Could not update document with processed book ID. This is optional:",
+              updateError
+            );
+          } else {
+            // For other errors, log but don't throw to avoid breaking upload flow
+            console.error("Error updating document record:", updateError);
+          }
+        } else {
+          console.log(
+            "Successfully updated document with processed ID:",
+            processedId
+          );
+        }
       } catch (updateError) {
-        console.log(
-          "Note: Could not update document with processing status. This is expected if the schema doesn't have this column.",
-          updateError
-        );
+        console.error("Exception updating document record:", updateError);
       }
 
       // All done!

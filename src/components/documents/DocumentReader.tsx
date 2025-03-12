@@ -74,6 +74,21 @@ export default function DocumentReader({
   // Ref for the EPUB reader component
   const epubReaderRef = useRef(null);
 
+  // Near the top of the component, add this code to extract the epubId from URL:
+  const [processedEpubId, setProcessedEpubId] = useState<string | null>(null);
+
+  // Get the processed EPUB ID from the URL if it exists
+  useEffect(() => {
+    // Extract epubId from URL query parameters if present
+    const urlParams = new URLSearchParams(window.location.search);
+    const epubIdParam = urlParams.get("epubId");
+
+    if (epubIdParam) {
+      console.log("Found processed EPUB ID in URL:", epubIdParam);
+      setProcessedEpubId(epubIdParam);
+    }
+  }, []);
+
   // Check if document is available offline
   useEffect(() => {
     const checkOfflineStatus = async () => {
@@ -149,68 +164,119 @@ export default function DocumentReader({
         let fileData;
         let fileType;
 
-        if (isOffline) {
-          // Get document from offline storage
-          const offlineData = await getOfflineDocumentContent(documentId);
+        // If we have a processed EPUB ID from URL parameters, use that instead
+        if (processedEpubId) {
           console.log(
-            "Retrieved offline content:",
-            offlineData ? "Content found" : "No content found"
+            "Using processed EPUB ID for rendering:",
+            processedEpubId
           );
-          fileData = offlineData;
-          setFileData(offlineData);
+          // Set content type to EPUB for the reader to use the proper renderer
+          setDocumentContent("EPUB_CONTENT_PLACEHOLDER");
+          fileType = "epub";
 
-          if (!fileData) {
-            // Try to get file type from document title
-            const extension = documentTitle.split(".").pop()?.toLowerCase();
-            fileType = extension || "txt";
-
-            // Create a fallback message
-            const errorBlob = new Blob(
-              [
-                `Unable to retrieve content for ${documentTitle}. Please try downloading the document again.`,
-              ],
-              { type: "text/plain" }
+          try {
+            // Get the HTML book content from our processed book storage
+            const { getProcessedBook } = await import(
+              "../../services/epub-processor"
             );
-            fileData = errorBlob;
-            setFileData(errorBlob);
-          } else {
-            // Get file type from document title
-            const extension = documentTitle.split(".").pop()?.toLowerCase();
-            fileType = extension || "txt";
+
+            console.log("Attempting to load processed book:", processedEpubId);
+            // This gets the processed book content
+            const processedBook = await getProcessedBook(processedEpubId);
+            console.log(
+              "Processed book loaded:",
+              processedBook ? "success" : "failure"
+            );
+
+            if (processedBook && processedBook.indexFile) {
+              console.log(
+                "Using processed book index file, length:",
+                processedBook.indexFile.length
+              );
+              // Create a blob from the HTML content with the proper MIME type
+              fileData = new Blob([processedBook.indexFile], {
+                type: "application/epub+zip",
+              });
+              setFileData(fileData);
+              setIsLoading(false);
+              return;
+            } else {
+              console.error(
+                "Could not find processed book with ID:",
+                processedEpubId
+              );
+              // Continue with normal document loading as a fallback
+            }
+          } catch (error) {
+            console.error("Error loading processed EPUB:", error);
+            // Continue with normal document loading as a fallback
           }
         } else {
-          try {
-            // Get the document record to find the file path
-            const { data, error } = await supabase
-              .from("documents")
-              .select("file_path, file_type")
-              .eq("id", documentId)
-              .single();
-
-            if (error) throw error;
-
-            // Get download URL from storage
-            const { data: onlineFileData, error: downloadError } =
-              await supabase.storage.from("documents").download(data.file_path);
-
-            if (downloadError) throw downloadError;
-
-            fileData = onlineFileData;
-            setFileData(onlineFileData);
-            fileType = data.file_type;
-          } catch (supabaseError) {
-            console.error("Error fetching from Supabase:", supabaseError);
-            // Create a fallback for when Supabase fails
-            const errorBlob = new Blob(
-              [
-                `Unable to fetch document from server. Please check your internet connection and try again.`,
-              ],
-              { type: "text/plain" }
+          if (isOffline) {
+            // Get document from offline storage
+            const offlineData = await getOfflineDocumentContent(documentId);
+            console.log(
+              "Retrieved offline content:",
+              offlineData ? "Content found" : "No content found"
             );
-            fileData = errorBlob;
-            setFileData(errorBlob);
-            const extension = documentTitle.split(".").pop()?.toLowerCase();
-            fileType = extension || "txt";
+            fileData = offlineData;
+            setFileData(offlineData);
+
+            if (!fileData) {
+              // Try to get file type from document title
+              const extension = documentTitle.split(".").pop()?.toLowerCase();
+              fileType = extension || "txt";
+
+              // Create a fallback message
+              const errorBlob = new Blob(
+                [
+                  `Unable to retrieve content for ${documentTitle}. Please try downloading the document again.`,
+                ],
+                { type: "text/plain" }
+              );
+              fileData = errorBlob;
+              setFileData(errorBlob);
+            } else {
+              // Get file type from document title
+              const extension = documentTitle.split(".").pop()?.toLowerCase();
+              fileType = extension || "txt";
+            }
+          } else {
+            try {
+              // Get the document record to find the file path
+              const { data, error } = await supabase
+                .from("documents")
+                .select("file_path, file_type")
+                .eq("id", documentId)
+                .single();
+
+              if (error) throw error;
+
+              // Get download URL from storage
+              const { data: onlineFileData, error: downloadError } =
+                await supabase.storage
+                  .from("documents")
+                  .download(data.file_path);
+
+              if (downloadError) throw downloadError;
+
+              fileData = onlineFileData;
+              setFileData(onlineFileData);
+              fileType = data.file_type;
+            } catch (supabaseError) {
+              console.error("Error fetching from Supabase:", supabaseError);
+              // Create a fallback for when Supabase fails
+              const errorBlob = new Blob(
+                [
+                  `Unable to fetch document from server. Please check your internet connection and try again.`,
+                ],
+                { type: "text/plain" }
+              );
+              fileData = errorBlob;
+              setFileData(errorBlob);
+              const extension = documentTitle.split(".").pop()?.toLowerCase();
+              fileType = extension || "txt";
+            }
           }
         }
 
@@ -339,7 +405,7 @@ export default function DocumentReader({
     };
 
     fetchDocumentContent();
-  }, [documentId, documentTitle]);
+  }, [documentId, documentTitle, processedEpubId]);
 
   // Fallback content for when no document is loaded
   const fallbackContent = `
