@@ -207,14 +207,16 @@ export default function DocumentUpload({
             const status =
               BookPreProcessingService.getProcessingStatus(insertedDocumentId);
             console.log("Polling preprocessing status:", status);
-            if (status.isProcessing) {
+            if (status.status === "processing") {
               setPreprocessingStatus(
-                `Preprocessing EPUB: ${selectedFile.name} (${status.progress}%)`
+                `Preprocessing EPUB: ${selectedFile.name} (${
+                  status.progress || 0
+                }%)`
               );
             } else if (status.error) {
               console.log("Processing error detected:", status.error);
               clearInterval(statusInterval);
-            } else if (status.isProcessed) {
+            } else if (status.status === "processed") {
               console.log("Processing already complete in status check");
               clearInterval(statusInterval);
             }

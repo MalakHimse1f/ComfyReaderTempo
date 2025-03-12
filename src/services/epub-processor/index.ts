@@ -101,6 +101,36 @@ export function clearReadingHistory(): void {
   processedBookStorage.clearReadingHistory();
 }
 
+/**
+ * Force synchronization of a book to cloud storage
+ * @param bookId Optional book ID to sync. If not provided, all pending books will be synced.
+ */
+export async function syncBookToCloud(bookId?: string): Promise<void> {
+  return processedBookStorage.forceSyncToCloud(bookId);
+}
+
+/**
+ * Check if a book exists in cloud storage
+ * @param bookId The ID of the book to check
+ */
+export async function isBookInCloudStorage(bookId: string): Promise<boolean> {
+  return processedBookStorage.isBookInCloudStorage(bookId);
+}
+
+/**
+ * Get a combined processing status, checking both local and cloud storage
+ * @param bookId The ID of the book to check
+ */
+export async function getProcessingStatusWithCloud(bookId: string): Promise<{
+  isProcessed: boolean;
+  isProcessing: boolean;
+  inCloud: boolean;
+  progress: number;
+  error?: Error;
+}> {
+  return processedBookStorage.getProcessingStatusWithCloud(bookId);
+}
+
 // Export the ReadingHistoryEntry interface
 export type { ReadingHistoryEntry } from "./storageService";
 

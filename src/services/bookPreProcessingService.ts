@@ -1,15 +1,17 @@
 import { processEpubToHtml } from "./epub-processor/epubProcessor";
 import { generateHtml } from "./epub-processor/htmlGenerator";
 import { ProcessedBookStorage } from "./epub-processor/storageService";
+import { getProcessingStatusWithCloud as checkCloudStatus } from "./epub-processor";
 
 /**
  * Represents the processing status of a book
  */
 export interface ProcessingStatus {
-  isProcessed: boolean;
-  isProcessing: boolean;
-  progress: number; // 0-100
-  error?: Error;
+  status: "idle" | "processing" | "processed" | "error";
+  error?: string;
+  downloadUrl?: string;
+  progress?: number;
+  inCloud?: boolean;
   startTime?: number;
   endTime?: number;
 }
@@ -33,11 +35,62 @@ export const BookPreProcessingService = {
   getProcessingStatus(bookId: string): ProcessingStatus {
     return (
       processingStatus.get(bookId) || {
-        isProcessed: false,
-        isProcessing: false,
-        progress: 0,
+        status: "idle",
       }
     );
+  },
+
+  /**
+   * Check if a book has been processed, including cloud storage check
+   * This is an enhanced version that also checks if the book exists in cloud storage
+   * @param bookId The ID of the book to check
+   * @returns Promise that resolves to the processing status with cloud information
+   */
+  async getProcessingStatusWithCloud(
+    bookId: string
+  ): Promise<ProcessingStatus & { inCloud: boolean }> {
+    // First get the local status
+    const localStatus = this.getProcessingStatus(bookId);
+
+    // If it's already known to be processed or is currently processing, return that
+    if (
+      localStatus.status === "processed" ||
+      localStatus.status === "processing"
+    ) {
+      return { ...localStatus, inCloud: false }; // We'll check cloud separately
+    }
+
+    // Check cloud status
+    try {
+      const cloudStatus = await checkCloudStatus(bookId);
+
+      // If it's in the cloud but not marked locally, update local status
+      if (cloudStatus.inCloud && localStatus.status !== "processed") {
+        processingStatus.set(bookId, {
+          status: "processed",
+          progress: 100,
+          inCloud: true,
+        });
+
+        console.log(
+          `[CLOUD] Book ${bookId} found in cloud but not locally, updating local status`
+        );
+
+        return {
+          status: "processed",
+          progress: 100,
+          inCloud: true,
+        };
+      }
+
+      return {
+        ...localStatus,
+        inCloud: cloudStatus.inCloud,
+      };
+    } catch (error) {
+      console.error(`[CLOUD] Error checking cloud status:`, error);
+      return { ...localStatus, inCloud: false };
+    }
   },
 
   /**
@@ -66,8 +119,7 @@ export const BookPreProcessingService = {
     // Update status
     const startTime = Date.now();
     processingStatus.set(bookId, {
-      isProcessed: false,
-      isProcessing: true,
+      status: "processing",
       progress: 0,
       startTime,
     });
@@ -105,8 +157,7 @@ export const BookPreProcessingService = {
       // Update status to completed
       const endTime = Date.now();
       processingStatus.set(bookId, {
-        isProcessed: true,
-        isProcessing: false,
+        status: "processed",
         progress: 100,
         startTime,
         endTime,
@@ -120,10 +171,8 @@ export const BookPreProcessingService = {
       // Handle errors
       const endTime = Date.now();
       processingStatus.set(bookId, {
-        isProcessed: false,
-        isProcessing: false,
-        progress: 0,
-        error: error instanceof Error ? error : new Error(String(error)),
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
         startTime,
         endTime,
       });
@@ -166,11 +215,9 @@ export const BookPreProcessingService = {
    */
   resetFailedProcessing(bookId: string): void {
     const status = processingStatus.get(bookId);
-    if (status && status.error && !status.isProcessing) {
+    if (status && status.error && status.status !== "processing") {
       processingStatus.set(bookId, {
-        isProcessed: false,
-        isProcessing: false,
-        progress: 0,
+        status: "idle",
       });
     }
   },
@@ -181,13 +228,17 @@ export const BookPreProcessingService = {
    */
   getProcessingStats() {
     const allStatuses = Array.from(processingStatus.values());
-    const completed = allStatuses.filter((s) => s.isProcessed).length;
+    const completed = allStatuses.filter(
+      (s) => s.status === "processed"
+    ).length;
     const failed = allStatuses.filter((s) => !!s.error).length;
-    const inProgress = allStatuses.filter((s) => s.isProcessing).length;
+    const inProgress = allStatuses.filter(
+      (s) => s.status === "processing"
+    ).length;
 
     // Calculate average processing time for completed books
     const completedWithTimes = allStatuses.filter(
-      (s) => s.isProcessed && s.startTime && s.endTime
+      (s) => s.status === "processed" && s.startTime && s.endTime
     );
 
     let averageTime = 0;

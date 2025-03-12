@@ -41,8 +41,8 @@ export const BookViewer: React.FC<BookViewerProps> = ({
   useEffect(() => {
     // Check if the book needs processing (not yet processed and not currently processing)
     if (
-      !processingStatus.isProcessed &&
-      !processingStatus.isProcessing &&
+      processingStatus.status !== "processed" &&
+      processingStatus.status !== "processing" &&
       !book.processedBookId
     ) {
       // Start processing if it's an EPUB
@@ -99,8 +99,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
     book.processedBookId,
     book.title,
     onUpdateBook,
-    processingStatus.isProcessed,
-    processingStatus.isProcessing,
+    processingStatus.status,
   ]);
 
   // Handle retry button click
@@ -134,7 +133,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
   }
 
   // Show processing indicator if the book is being processed
-  if (processingStatus.isProcessing) {
+  if (processingStatus.status === "processing") {
     return (
       <div className="processing-indicator">
         <h3>Optimizing "{book.title}" for Reading</h3>
@@ -142,11 +141,11 @@ export const BookViewer: React.FC<BookViewerProps> = ({
           <div className="progress-bar">
             <div
               className="progress-fill"
-              style={{ width: `${processingStatus.progress}%` }}
+              style={{ width: `${processingStatus.progress || 0}%` }}
             ></div>
           </div>
           <div className="progress-text">
-            {processingStatus.progress}% complete
+            {Math.round(processingStatus.progress || 0)}% complete
           </div>
         </div>
         <p className="processing-info">
@@ -159,7 +158,7 @@ export const BookViewer: React.FC<BookViewerProps> = ({
 
   // Use the HTML reader if the book has been processed
   if (
-    (processingStatus.isProcessed || book.processedBookId) &&
+    (processingStatus.status === "processed" || book.processedBookId) &&
     book.processedBookId
   ) {
     return (

@@ -110,8 +110,6 @@ export class ProcessedBookStorage {
         toc: book.toc,
         chapterIds: book.chapters.map((c) => c.id),
         createdAt: new Date().toISOString(),
-        indexFile,
-        css,
       };
 
       // Store in IndexedDB
@@ -122,13 +120,29 @@ export class ProcessedBookStorage {
       const bookStore = bookTx.objectStore("books");
       await this.promisifyRequest(bookStore.put(bookData, bookId));
 
+      // Store resources like index.html and styles.css
+      const resourcesTx = db.transaction(["resources"], "readwrite");
+      const resourcesStore = resourcesTx.objectStore("resources");
+
+      // Store index file
+      await this.promisifyRequest(
+        resourcesStore.put(indexFile, `${bookId}/index.html`)
+      );
+
+      // Store CSS
+      await this.promisifyRequest(
+        resourcesStore.put(css, `${bookId}/styles.css`)
+      );
+
       // Store HTML files in separate transaction to avoid blocking
       const chapterTx = db.transaction(["chapters"], "readwrite");
       const chapterStore = chapterTx.objectStore("chapters");
 
       const chapterPromises = [];
       for (const [filename, content] of htmlFiles.entries()) {
-        const key = `${bookId}_${filename}`;
+        // Convert filename to consistent format
+        // Ensure it uses the same pattern as in the sync process
+        const key = `${bookId}/chapters/${filename.replace(/^chapter_/, "")}`;
         chapterPromises.push(
           this.promisifyRequest(chapterStore.put(content, key))
         );
@@ -171,19 +185,32 @@ export class ProcessedBookStorage {
     try {
       // Try to get from IndexedDB
       const db = await this.openDatabase();
-      const tx = db.transaction(["books"], "readonly");
-      const store = tx.objectStore("books");
 
-      const bookData = await this.promisifyRequest<any>(store.get(bookId));
+      // Get book data
+      const bookTx = db.transaction(["books"], "readonly");
+      const bookStore = bookTx.objectStore("books");
+      const bookData = await this.promisifyRequest<any>(bookStore.get(bookId));
 
       if (!bookData) {
         throw new Error(`Book with ID ${bookId} not found`);
       }
 
+      // Get index file
+      const resourcesTx = db.transaction(["resources"], "readonly");
+      const resourcesStore = resourcesTx.objectStore("resources");
+      const indexFile = await this.promisifyRequest<string>(
+        resourcesStore.get(`${bookId}/index.html`)
+      );
+
+      // Get CSS
+      const css = await this.promisifyRequest<string>(
+        resourcesStore.get(`${bookId}/styles.css`)
+      );
+
       return {
         book: bookData,
-        indexFile: bookData.indexFile,
-        css: bookData.css,
+        indexFile,
+        css,
       };
     } catch (error) {
       console.error("Error retrieving processed book:", error);
@@ -240,7 +267,8 @@ export class ProcessedBookStorage {
       const tx = db.transaction(["chapters"], "readonly");
       const store = tx.objectStore("chapters");
 
-      const key = `${bookId}_chapter_${chapterId}.html`;
+      // Use the same key format as we use for storing
+      const key = `${bookId}/chapters/chapter_${chapterId}.html`;
       const chapterContent = await this.promisifyRequest<string>(
         store.get(key)
       );
@@ -625,24 +653,29 @@ export class ProcessedBookStorage {
     }
 
     try {
+      console.log("[SYNC] Starting syncProcessedBooks...");
       // Get items from sync queue
       const db = await this.openDatabase();
       const tx = db.transaction(["syncQueue"], "readonly");
       const store = tx.objectStore("syncQueue");
 
       const allKeys = await this.getAllKeysWithPrefix(store, "");
+      console.log(`[SYNC] Found ${allKeys.length} books in sync queue`);
 
       for (const bookId of allKeys) {
         const syncItem = await this.promisifyRequest<SyncStatus>(
           store.get(bookId)
         );
 
+        console.log(`[SYNC] Book ${bookId} status: ${syncItem?.status}`);
         if (syncItem && syncItem.status === "pending") {
+          console.log(`[SYNC] Synchronizing book ${bookId} to cloud...`);
           await this.syncBookToCloud(bookId);
         }
       }
+      console.log("[SYNC] Completed syncProcessedBooks");
     } catch (error) {
-      console.error("Error syncing books:", error);
+      console.error("[SYNC] Error syncing books:", error);
     }
   }
 
@@ -650,102 +683,224 @@ export class ProcessedBookStorage {
    * Sync a specific book to cloud storage
    */
   private async syncBookToCloud(bookId: string): Promise<void> {
+    console.log(`[SYNC] Starting cloud sync for book ${bookId}`);
+
     try {
-      // Update status to processing
+      // Update sync status to syncing
       await this.updateSyncStatus(bookId, "syncing");
 
-      // Get the book data
       const db = await this.openDatabase();
-      const bookTx = db.transaction(["books"], "readonly");
-      const bookStore = bookTx.objectStore("books");
 
-      const bookData = await this.promisifyRequest<any>(bookStore.get(bookId));
+      // First transaction: Get book data
+      const bookData = await new Promise<any>((resolve, reject) => {
+        const transaction = db.transaction(["books"], "readonly");
+        const store = transaction.objectStore("books");
+        const request = store.get(bookId);
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
 
       if (!bookData) {
-        throw new Error(`Book not found: ${bookId}`);
+        console.error(`[SYNC] Book ${bookId} not found in local storage`);
+        await this.updateSyncStatus(
+          bookId,
+          "error",
+          "Book not found in local storage"
+        );
+        return;
       }
 
-      // Upload book data to Supabase
-      const { error: bookError } = await supabase.storage
-        .from("processed-books")
-        .upload(
-          `${bookId}/book-data.json`,
-          new Blob([JSON.stringify(bookData)], {
-            type: "application/json",
-          }),
-          {
-            upsert: true,
-          }
-        );
-
-      if (bookError) throw bookError;
-
-      // Upload index file
-      const { error: indexError } = await supabase.storage
-        .from("processed-books")
-        .upload(
-          `${bookId}/index.html`,
-          new Blob([bookData.indexFile], {
-            type: "text/html",
-          }),
-          {
-            upsert: true,
-          }
-        );
-
-      if (indexError) throw indexError;
-
-      // Upload CSS
-      const { error: cssError } = await supabase.storage
-        .from("processed-books")
-        .upload(
-          `${bookId}/styles.css`,
-          new Blob([bookData.css], {
-            type: "text/css",
-          }),
-          {
-            upsert: true,
-          }
-        );
-
-      if (cssError) throw cssError;
-
-      // Upload chapters
-      const chapterTx = db.transaction(["chapters"], "readonly");
-      const chapterStore = chapterTx.objectStore("chapters");
-
-      const chapterKeys = await this.getAllKeysWithPrefix(
-        chapterStore,
-        `${bookId}_`
+      console.log(
+        `[SYNC] Retrieved book data for ${bookId}, title: ${bookData.title}`
       );
 
-      for (const key of chapterKeys) {
-        const chapterContent = await this.promisifyRequest<string>(
-          chapterStore.get(key)
-        );
-        const chapterFilename = key.replace(`${bookId}_`, "");
+      // Upload book data
+      const bookDataPath = `${bookId}/book-data.json`;
+      console.log(`[SYNC] Uploading book data to Supabase: ${bookDataPath}`);
 
-        const { error: chapterError } = await supabase.storage
-          .from("processed-books")
-          .upload(
-            `${bookId}/chapters/${chapterFilename}`,
-            new Blob([chapterContent], {
-              type: "text/html",
-            }),
-            {
-              upsert: true,
+      const { error: bookDataError } = await supabase.storage
+        .from("processed-books")
+        .upload(bookDataPath, JSON.stringify(bookData), {
+          contentType: "application/json",
+          upsert: true,
+        });
+
+      if (bookDataError) {
+        console.error(
+          `[SYNC] Error uploading book data: ${bookDataError.message}`
+        );
+        await this.updateSyncStatus(
+          bookId,
+          "error",
+          `Error uploading book data: ${bookDataError.message}`
+        );
+        return;
+      }
+
+      console.log(`[SYNC] Book data uploaded successfully`);
+
+      // Second transaction: Get index file
+      const indexFile = await new Promise<string>((resolve, reject) => {
+        const transaction = db.transaction(["resources"], "readonly");
+        const store = transaction.objectStore("resources");
+        const request = store.get(`${bookId}/index.html`);
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+
+      // Upload index file
+      console.log(`[SYNC] Uploading index file: ${bookId}/index.html`);
+      const { error: indexError } = await supabase.storage
+        .from("processed-books")
+        .upload(`${bookId}/index.html`, indexFile, {
+          contentType: "text/html",
+          upsert: true,
+        });
+
+      if (indexError) {
+        console.error(
+          `[SYNC] Error uploading index file: ${indexError.message}`
+        );
+        await this.updateSyncStatus(
+          bookId,
+          "error",
+          `Error uploading index file: ${indexError.message}`
+        );
+        return;
+      }
+
+      console.log(`[SYNC] Index file uploaded successfully`);
+
+      // Third transaction: Get CSS
+      const css = await new Promise<string>((resolve, reject) => {
+        const transaction = db.transaction(["resources"], "readonly");
+        const store = transaction.objectStore("resources");
+        const request = store.get(`${bookId}/styles.css`);
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+
+      // Upload CSS
+      console.log(`[SYNC] Uploading CSS: ${bookId}/styles.css`);
+      const { error: cssError } = await supabase.storage
+        .from("processed-books")
+        .upload(`${bookId}/styles.css`, css, {
+          contentType: "text/css",
+          upsert: true,
+        });
+
+      if (cssError) {
+        console.error(`[SYNC] Error uploading CSS: ${cssError.message}`);
+        await this.updateSyncStatus(
+          bookId,
+          "error",
+          `Error uploading CSS: ${cssError.message}`
+        );
+        return;
+      }
+
+      console.log(`[SYNC] CSS uploaded successfully`);
+
+      // Fourth transaction: Get chapter keys in a separate transaction
+      const chapterKeys = await new Promise<string[]>((resolve, reject) => {
+        const transaction = db.transaction(["chapters"], "readonly");
+        const store = transaction.objectStore("chapters");
+
+        this.getAllKeysWithPrefix(store, `${bookId}/chapters/`)
+          .then(resolve)
+          .catch(reject);
+      });
+
+      console.log(`[SYNC] Found ${chapterKeys.length} chapters to upload`);
+
+      // Upload chapters one by one, each in its own transaction
+      let successfulUploads = 0;
+      for (let i = 0; i < chapterKeys.length; i++) {
+        const chapterKey = chapterKeys[i];
+
+        try {
+          // Periodic logging to show progress
+          if (i % 10 === 0 || i === chapterKeys.length - 1) {
+            console.log(
+              `[SYNC] Uploading chapter ${i + 1} of ${
+                chapterKeys.length
+              }: ${chapterKey}`
+            );
+          }
+
+          // Get chapter content in its own transaction
+          const chapterContent = await new Promise<string>(
+            (resolve, reject) => {
+              const transaction = db.transaction(["chapters"], "readonly");
+              const store = transaction.objectStore("chapters");
+              const request = store.get(chapterKey);
+
+              request.onsuccess = () => resolve(request.result);
+              request.onerror = () => reject(request.error);
             }
           );
 
-        if (chapterError) throw chapterError;
+          // Upload the chapter
+          const supabaseKey = chapterKey; // Same path in Supabase
+          const { error: chapterError } = await supabase.storage
+            .from("processed-books")
+            .upload(supabaseKey, chapterContent, {
+              contentType: "text/html",
+              upsert: true,
+            });
+
+          if (chapterError) {
+            console.error(
+              `[SYNC] Error uploading chapter ${chapterKey}: ${chapterError.message}`
+            );
+            // Continue with other chapters instead of failing completely
+          } else {
+            successfulUploads++;
+            // Periodic logging for successful uploads
+            if (
+              successfulUploads % 10 === 0 ||
+              successfulUploads === chapterKeys.length
+            ) {
+              console.log(
+                `[SYNC] Successfully uploaded ${successfulUploads} of ${chapterKeys.length} chapters`
+              );
+            }
+          }
+        } catch (error) {
+          console.error(
+            `[SYNC] Error processing chapter ${chapterKey}:`,
+            error
+          );
+          // Continue with other chapters
+        }
       }
 
-      // Update status to synced
-      await this.updateSyncStatus(bookId, "synced");
+      // Consider it a success if we uploaded at least 90% of chapters
+      const uploadPercentage = (successfulUploads / chapterKeys.length) * 100;
+      if (successfulUploads === 0) {
+        await this.updateSyncStatus(
+          bookId,
+          "error",
+          "Failed to upload any chapters"
+        );
+      } else if (uploadPercentage < 90) {
+        await this.updateSyncStatus(
+          bookId,
+          "error",
+          `Partial upload: only ${successfulUploads} of ${chapterKeys.length} chapters uploaded`
+        );
+      } else {
+        // Success - even if a few chapters failed
+        console.log(
+          `[SYNC] Book ${bookId} synced successfully with ${successfulUploads} of ${chapterKeys.length} chapters`
+        );
+        await this.updateSyncStatus(bookId, "synced");
+      }
     } catch (error) {
-      console.error(`Error syncing book ${bookId} to cloud:`, error);
-
-      // Update status to error
+      console.error(`[SYNC] Error syncing book ${bookId} to cloud:`, error);
       await this.updateSyncStatus(bookId, "error", (error as Error).message);
     }
   }
@@ -759,6 +914,11 @@ export class ProcessedBookStorage {
     error?: string
   ): Promise<void> {
     try {
+      console.log(
+        `[SYNC] Updating sync status for book ${bookId} to ${status}${
+          error ? ` with error: ${error}` : ""
+        }`
+      );
       const db = await this.openDatabase();
       const tx = db.transaction(["syncQueue"], "readwrite");
       const store = tx.objectStore("syncQueue");
@@ -780,8 +940,9 @@ export class ProcessedBookStorage {
       }
 
       await this.promisifyRequest(store.put(syncItem, bookId));
+      console.log(`[SYNC] Sync status updated successfully for book ${bookId}`);
     } catch (error) {
-      console.error("Error updating sync status:", error);
+      console.error("[SYNC] Error updating sync status:", error);
     }
   }
 
@@ -789,6 +950,11 @@ export class ProcessedBookStorage {
    * Setup sync listeners for online/offline events
    */
   public setupSyncListeners(): void {
+    // Ensure the storage bucket exists
+    this.ensureSupabaseBucketExists().catch((err) =>
+      console.error("[SYNC] Error ensuring Supabase bucket exists:", err)
+    );
+
     // Sync when we come back online
     window.addEventListener("online", () => {
       console.log("Back online, syncing books...");
@@ -805,6 +971,225 @@ export class ProcessedBookStorage {
         );
       }, 5000); // Delay to allow app to initialize
     }
+  }
+
+  /**
+   * Ensure the Supabase storage bucket exists
+   */
+  private async ensureSupabaseBucketExists(): Promise<void> {
+    try {
+      console.log(
+        "[SYNC] Checking if 'processed-books' bucket exists in Supabase..."
+      );
+
+      // First check if the bucket exists
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const bucketExists = buckets?.some(
+        (bucket) => bucket.name === "processed-books"
+      );
+
+      if (!bucketExists) {
+        console.log(
+          "[SYNC] Bucket 'processed-books' does not exist, creating it..."
+        );
+
+        // Create the bucket with public access
+        const { error } = await supabase.storage.createBucket(
+          "processed-books",
+          {
+            public: true, // Make the bucket publicly accessible
+          }
+        );
+
+        if (error) {
+          console.error("[SYNC] Error creating bucket:", error);
+          throw error;
+        }
+
+        console.log("[SYNC] Successfully created 'processed-books' bucket");
+      } else {
+        console.log("[SYNC] Bucket 'processed-books' already exists");
+      }
+    } catch (error) {
+      console.error("[SYNC] Error checking/creating Supabase bucket:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Force synchronization of a specific book or all pending books
+   * @param bookId Optional book ID to sync. If not provided, all pending books will be synced.
+   */
+  public async forceSyncToCloud(bookId?: string): Promise<void> {
+    try {
+      if (!navigator.onLine) {
+        console.log("[SYNC] Can't force sync - device is offline");
+        return;
+      }
+
+      console.log(
+        `[SYNC] Force sync triggered ${
+          bookId ? `for book ${bookId}` : "for all pending books"
+        }`
+      );
+
+      if (bookId) {
+        // Sync specific book
+        await this.updateSyncStatus(bookId, "pending");
+        await this.syncBookToCloud(bookId);
+      } else {
+        // Sync all pending books
+        await this.syncProcessedBooks();
+      }
+
+      console.log("[SYNC] Force sync completed");
+    } catch (error) {
+      console.error("[SYNC] Error during force sync:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if a book is stored in cloud storage
+   */
+  public async isBookInCloudStorage(bookId: string): Promise<boolean> {
+    if (!navigator.onLine) {
+      return false;
+    }
+
+    try {
+      console.log(
+        `[CLOUD] Checking if book ${bookId} exists in cloud storage...`
+      );
+
+      // Try to fetch book data from cloud storage - this is more reliable than listing
+      const { data, error } = await supabase.storage
+        .from("processed-books")
+        .download(`${bookId}/book-data.json`);
+
+      if (error) {
+        console.error(`[CLOUD] Error checking cloud storage:`, error);
+        return false;
+      }
+
+      // If we successfully downloaded the book data, the book exists
+      const exists = !!data;
+      console.log(
+        `[CLOUD] Book ${bookId} ${
+          exists ? "found" : "not found"
+        } in cloud storage`
+      );
+
+      // If the book exists in the cloud but we don't have it locally, try to fetch it
+      if (exists) {
+        try {
+          const bookDataText = await data.text();
+          const bookData = JSON.parse(bookDataText);
+
+          // Store the book data locally
+          const db = await this.openDatabase();
+          const tx = db.transaction(["books"], "readwrite");
+          const store = tx.objectStore("books");
+
+          // Check if we already have it
+          const existingBook = await this.promisifyRequest(store.get(bookId));
+          if (!existingBook) {
+            console.log(
+              `[CLOUD] Storing book ${bookId} from cloud to local storage`
+            );
+            await this.promisifyRequest(store.put(bookData, bookId));
+
+            // Add to index
+            await this.addToIndex({
+              id: bookId,
+              metadata: bookData.metadata,
+              toc: bookData.toc,
+              chapters: bookData.chapterIds.map((id: string) => ({ id })),
+              resources: new Map(),
+              css: Array.isArray(bookData.css) ? bookData.css : [bookData.css],
+              content: {},
+            } as unknown as ProcessedBook);
+          }
+        } catch (importError) {
+          console.error(
+            `[CLOUD] Error importing book from cloud:`,
+            importError
+          );
+          // We still return true as the book does exist in the cloud
+        }
+      }
+
+      return exists;
+    } catch (error) {
+      console.error(`[CLOUD] Error checking if book is in cloud:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Get a combined processing status, checking both local and cloud storage
+   */
+  public async getProcessingStatusWithCloud(bookId: string): Promise<{
+    isProcessed: boolean;
+    isProcessing: boolean;
+    inCloud: boolean;
+    progress: number;
+    error?: Error;
+  }> {
+    // First check local storage
+    let localStatus = {
+      isProcessed: false,
+      isProcessing: false,
+      progress: 0,
+      error: undefined as Error | undefined,
+    };
+
+    try {
+      const db = await this.openDatabase();
+      const tx = db.transaction(["syncQueue"], "readonly");
+      const store = tx.objectStore("syncQueue");
+
+      const syncItem = await this.promisifyRequest<SyncStatus>(
+        store.get(bookId)
+      );
+
+      if (syncItem) {
+        if (syncItem.status === "synced") {
+          localStatus.isProcessed = true;
+        } else if (syncItem.status === "syncing") {
+          localStatus.isProcessing = true;
+          localStatus.progress = 50; // Arbitrary
+        } else if (syncItem.status === "error" && syncItem.error) {
+          localStatus.error = new Error(syncItem.error);
+        }
+      }
+
+      // Also check the book store to confirm it exists locally
+      const bookTx = db.transaction(["books"], "readonly");
+      const bookStore = bookTx.objectStore("books");
+      const bookExists = await this.promisifyRequest<any>(
+        bookStore.get(bookId)
+      );
+
+      if (bookExists) {
+        localStatus.isProcessed = true;
+      }
+    } catch (error) {
+      console.error(`[CLOUD] Error checking local status:`, error);
+    }
+
+    // Then check cloud storage
+    let inCloud = false;
+
+    if (navigator.onLine) {
+      inCloud = await this.isBookInCloudStorage(bookId);
+    }
+
+    // Return combined status
+    return {
+      ...localStatus,
+      inCloud,
+    };
   }
 }
 

@@ -1,0 +1,141 @@
+         Microsoft Edge is moving towards a new experience that allows users to choose to browse without third-party cookies.
+
+[NEW] Explain Console errors by using Copilot in Edge: click
+
+         to explain an error.
+        Learn more
+        Don't show again
+
+storageService.ts:981 [SYNC] Checking if 'processed-books' bucket exists in Supabase...
+hook.js:608 Warning: Function components cannot be given refs. Attempts to access this ref will fail. Did you mean to use React.forwardRef()?
+
+Check the render method of `SlotClone`. Error Component Stack
+at DropdownMenu (DropdownMenu.tsx:52:5)
+at Slot.tsx:61:11
+at Slot.tsx:13:11
+at Primitive.tsx:38:13
+at Slot.tsx:61:11
+at Slot.tsx:13:11
+at Primitive.tsx:38:13
+at Popper.tsx:75:13
+at Tooltip.tsx:259:13
+at Provider (createContext.tsx:58:15)
+at Provider (createContext.tsx:58:15)
+at Popper (Popper.tsx:50:11)
+at Tooltip (Tooltip.tsx:154:5)
+at Provider (createContext.tsx:58:15)
+at TooltipProvider (Tooltip.tsx:68:5)
+at div (<anonymous>)
+at div (<anonymous>)
+at TopNavigation (TopNavigation.tsx:29:3)
+at div (<anonymous>)
+at Dashboard (dashboard.tsx:11:41)
+at PrivateRoute (App.tsx:11:25)
+at RenderedRoute (hooks.tsx:657:26)
+at Routes (components.tsx:504:3)
+at AppRoutes (<anonymous>)
+at Suspense (<anonymous>)
+at AuthProvider (auth.tsx:15:32)
+at App (<anonymous>)
+at Router (components.tsx:413:13)
+at BrowserRouter (index.tsx:774:3)
+overrideMethod @ hook.js:608
+printWarning @ react-dom.development.js:86
+error @ react-dom.development.js:60
+validateFunctionComponentInDev @ react-dom.development.js:20222
+mountIndeterminateComponent @ react-dom.development.js:20189
+beginWork @ react-dom.development.js:21626
+beginWork$1 @ react-dom.development.js:27465
+performUnitOfWork @ react-dom.development.js:26596
+workLoopSync @ react-dom.development.js:26505
+renderRootSync @ react-dom.development.js:26473
+performConcurrentWorkOnRoot @ react-dom.development.js:25777
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533
+content.js:1 {results: {…}}
+storageService.ts:992 [SYNC] Bucket 'processed-books' does not exist, creating it...
+DocumentLibrary.tsx:159 Document 18682bd6-d60d-433c-83be-cd828557d24c reading progress: {}
+DocumentLibrary.tsx:159 Document f32290b6-59a4-4fc5-8ef0-0b5f349a1957 reading progress: {}
+DocumentLibrary.tsx:159 Document b11eba9d-09db-4f95-b2e5-6383a79f8ad6 reading progress: {progress: '0', updated_at: '2025-03-12T04:28:15.264Z'}
+DocumentLibrary.tsx:177 Parsed progress for b11eba9d-09db-4f95-b2e5-6383a79f8ad6: 0%
+DocumentLibrary.tsx:159 Document 18682bd6-d60d-433c-83be-cd828557d24c reading progress: {}
+DocumentLibrary.tsx:159 Document f32290b6-59a4-4fc5-8ef0-0b5f349a1957 reading progress: {}
+DocumentLibrary.tsx:159 Document b11eba9d-09db-4f95-b2e5-6383a79f8ad6 reading progress: {progress: '0', updated_at: '2025-03-12T04:28:15.264Z'}
+DocumentLibrary.tsx:177 Parsed progress for b11eba9d-09db-4f95-b2e5-6383a79f8ad6: 0%
+storageService.ts:997
+
+            POST https://bgtazoxuzogtwxxzwkvt.supabase.co/storage/v1/bucket 400 (Bad Request)
+
+(anonymous) @ fetch.ts:15
+(anonymous) @ fetch.ts:46
+fulfilled @ fetch.ts:2
+Promise.then
+step @ fetch.ts:2
+(anonymous) @ fetch.ts:2
+**awaiter6 @ fetch.ts:2
+(anonymous) @ fetch.ts:34
+(anonymous) @ helpers.ts:13
+(anonymous) @ fetch.ts:69
+(anonymous) @ fetch.ts:68
+(anonymous) @ helpers.ts:39
+**awaiter3 @ helpers.ts:39
+\_handleRequest @ fetch.ts:66
+(anonymous) @ fetch.ts:96
+(anonymous) @ helpers.ts:39
+**awaiter3 @ helpers.ts:39
+post @ fetch.ts:94
+(anonymous) @ StorageBucketApi.ts:105
+(anonymous) @ constants.ts:2
+**awaiter5 @ constants.ts:2
+createBucket @ StorageBucketApi.ts:93
+ensureSupabaseBucketExists @ storageService.ts:997
+await in ensureSupabaseBucketExists
+setupSyncListeners @ storageService.ts:954
+(anonymous) @ storageService.ts:1200
+storageService.ts:1005 [SYNC] Error creating bucket: StorageApiError: new row violates row-level security policy
+at fetch.ts:30:16
+overrideMethod @ hook.js:608
+ensureSupabaseBucketExists @ storageService.ts:1005
+await in ensureSupabaseBucketExists
+setupSyncListeners @ storageService.ts:954
+(anonymous) @ storageService.ts:1200
+storageService.ts:1014 [SYNC] Error checking/creating Supabase bucket: StorageApiError: new row violates row-level security policy
+at fetch.ts:30:16
+overrideMethod @ hook.js:608
+ensureSupabaseBucketExists @ storageService.ts:1014
+await in ensureSupabaseBucketExists
+setupSyncListeners @ storageService.ts:954
+(anonymous) @ storageService.ts:1200
+storageService.ts:955 [SYNC] Error ensuring Supabase bucket exists: StorageApiError: new row violates row-level security policy
+at fetch.ts:30:16
+overrideMethod @ hook.js:608
+(anonymous) @ storageService.ts:955
+Promise.catch
+setupSyncListeners @ storageService.ts:954
+(anonymous) @ storageService.ts:1200
+DocumentLibrary.tsx:159 Document 18682bd6-d60d-433c-83be-cd828557d24c reading progress: {}
+DocumentLibrary.tsx:159 Document f32290b6-59a4-4fc5-8ef0-0b5f349a1957 reading progress: {}
+DocumentLibrary.tsx:159 Document b11eba9d-09db-4f95-b2e5-6383a79f8ad6 reading progress: {progress: '0', updated_at: '2025-03-12T04:28:15.264Z'}
+DocumentLibrary.tsx:177 Parsed progress for b11eba9d-09db-4f95-b2e5-6383a79f8ad6: 0%
+DocumentLibrary.tsx:159 Document 18682bd6-d60d-433c-83be-cd828557d24c reading progress: {}
+DocumentLibrary.tsx:159 Document f32290b6-59a4-4fc5-8ef0-0b5f349a1957 reading progress: {}
+DocumentLibrary.tsx:159 Document b11eba9d-09db-4f95-b2e5-6383a79f8ad6 reading progress: {progress: '0', updated_at: '2025-03-12T04:28:15.264Z'}
+DocumentLibrary.tsx:177 Parsed progress for b11eba9d-09db-4f95-b2e5-6383a79f8ad6: 0%
+DocumentLibrary.tsx:159 Document 18682bd6-d60d-433c-83be-cd828557d24c reading progress: {}
+DocumentLibrary.tsx:159 Document f32290b6-59a4-4fc5-8ef0-0b5f349a1957 reading progress: {}
+DocumentLibrary.tsx:159 Document b11eba9d-09db-4f95-b2e5-6383a79f8ad6 reading progress: {progress: '0', updated_at: '2025-03-12T04:28:15.264Z'}
+DocumentLibrary.tsx:177 Parsed progress for b11eba9d-09db-4f95-b2e5-6383a79f8ad6: 0%
+storageService.ts:656 [SYNC] Starting syncProcessedBooks...
+storageService.ts:663 [SYNC] Found 10 books in sync queue
+storageService.ts:670 [SYNC] Book book-1741754223950-o9r3l5a status: error
+storageService.ts:670 [SYNC] Book book-1741754274135-6nknk90 status: error
+storageService.ts:670 [SYNC] Book book-1741754753591-hnlxr6p status: error
+storageService.ts:670 [SYNC] Book book-1741755169479-qh7ksgo status: error
+storageService.ts:670 [SYNC] Book book-1741755223902-fj1kcoo status: error
+storageService.ts:670 [SYNC] Book book-1741755451111-h6zbjpd status: error
+storageService.ts:670 [SYNC] Book book-1741755495428-7tvookm status: error
+storageService.ts:670 [SYNC] Book book-1741755982679-dtcaw2x status: synced
+storageService.ts:670 [SYNC] Book book-1741756395898-kixb3fx status: error
+storageService.ts:670 [SYNC] Book book-1741756729161-bqf11lx status: synced
+storageService.ts:676 [SYNC] Completed syncProcessedBooks

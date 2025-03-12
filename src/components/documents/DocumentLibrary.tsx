@@ -519,9 +519,13 @@ export default function DocumentLibrary({
             onDelete={() => handleDeleteDocument(doc)}
             downloadProgress={downloadProgress[doc.id] || 0}
             isDownloading={isDownloading[doc.id] || false}
-            isProcessing={processingStatuses[doc.id]?.isProcessing || false}
+            isProcessing={
+              processingStatuses[doc.id]?.status === "processing" || false
+            }
             processingProgress={processingStatuses[doc.id]?.progress || 0}
-            isProcessed={processingStatuses[doc.id]?.isProcessed || false}
+            isProcessed={
+              processingStatuses[doc.id]?.status === "processed" || false
+            }
           />
         ))}
       </div>
