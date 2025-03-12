@@ -17,7 +17,7 @@ export interface OfflineDocument {
 export async function saveDocumentOffline(
   documentId: string,
   documentData: Blob,
-  metadata: OfflineDocument,
+  metadata: OfflineDocument
 ): Promise<void> {
   // Only enable mock mode for testing if explicitly requested
   // Uncomment the line below to enable mock mode for testing
@@ -43,7 +43,7 @@ export async function saveDocumentOffline(
       if (!offlineDocIds.includes(documentId)) {
         localStorage.setItem(
           "offlineDocumentIds",
-          JSON.stringify([...offlineDocIds, documentId]),
+          JSON.stringify([...offlineDocIds, documentId])
         );
       }
 
@@ -58,7 +58,7 @@ export async function saveDocumentOffline(
       // Fallback to localStorage if IndexedDB fails
       console.warn(
         "IndexedDB failed, falling back to localStorage:",
-        indexedDBError,
+        indexedDBError
       );
 
       // For localStorage, we can only store metadata and a flag
@@ -67,14 +67,14 @@ export async function saveDocumentOffline(
       if (!offlineDocIds.includes(documentId)) {
         localStorage.setItem(
           "offlineDocumentIds",
-          JSON.stringify([...offlineDocIds, documentId]),
+          JSON.stringify([...offlineDocIds, documentId])
         );
       }
 
       // Store metadata in localStorage
       localStorage.setItem(
         `doc_metadata_${documentId}`,
-        JSON.stringify({ ...metadata, isOffline: true }),
+        JSON.stringify({ ...metadata, isOffline: true })
       );
 
       // We'll just store a flag that it's available offline
@@ -99,17 +99,26 @@ export async function removeDocumentOffline(documentId: string): Promise<void> {
 
     // Update metadata to mark as not offline
     const metadataStore = tx.objectStore("metadata");
-    const metadata = await metadataStore.get(documentId);
+    const metadataRequest = metadataStore.get(documentId);
+    const metadata = await new Promise<any>((resolve, reject) => {
+      metadataRequest.onsuccess = () => resolve(metadataRequest.result);
+      metadataRequest.onerror = () => reject(metadataRequest.error);
+    });
+
     if (metadata) {
       metadata.isOffline = false;
-      await metadataStore.put(metadata, documentId);
+      await new Promise<void>((resolve, reject) => {
+        const putRequest = metadataStore.put(metadata, documentId);
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      });
     }
 
     // Update the list of offline document IDs
     const offlineDocIds = await getOfflineDocumentIds();
     localStorage.setItem(
       "offlineDocumentIds",
-      JSON.stringify(offlineDocIds.filter((id) => id !== documentId)),
+      JSON.stringify(offlineDocIds.filter((id) => id !== documentId))
     );
 
     return new Promise((resolve, reject) => {
@@ -124,7 +133,7 @@ export async function removeDocumentOffline(documentId: string): Promise<void> {
 
 // Get document content from offline storage
 export async function getOfflineDocumentContent(
-  documentId: string,
+  documentId: string
 ): Promise<Blob | null> {
   try {
     // First check if the document is marked as offline
@@ -147,7 +156,7 @@ export async function getOfflineDocumentContent(
           const content = request.result;
           console.log(
             `IndexedDB content for ${documentId}:`,
-            content ? "Found" : "Not found",
+            content ? "Found" : "Not found"
           );
 
           if (content) {
@@ -169,7 +178,7 @@ export async function getOfflineDocumentContent(
         request.onerror = (event) => {
           console.error(
             "Error getting document from IndexedDB:",
-            request.error,
+            request.error
           );
           reject(request.error);
         };
@@ -186,14 +195,18 @@ export async function getOfflineDocumentContent(
 
 // Get document metadata from offline storage
 export async function getOfflineDocumentMetadata(
-  documentId: string,
+  documentId: string
 ): Promise<OfflineDocument | null> {
   try {
     const db = await openDatabase();
     const tx = db.transaction(["metadata"], "readonly");
     const store = tx.objectStore("metadata");
 
-    return store.get(documentId);
+    return new Promise<OfflineDocument | null>((resolve, reject) => {
+      const request = store.get(documentId);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
   } catch (error) {
     console.error("Error getting offline document metadata:", error);
     return null;
@@ -214,15 +227,23 @@ export async function getAllOfflineDocumentMetadata(): Promise<
       const tx = db.transaction(["metadata"], "readonly");
       const store = tx.objectStore("metadata");
 
-      const promises = offlineDocIds.map((id) => store.get(id));
-      const results = await Promise.all(promises);
+      const results = await Promise.all(
+        offlineDocIds.map(
+          (id) =>
+            new Promise<OfflineDocument | null>((resolve, reject) => {
+              const request = store.get(id);
+              request.onsuccess = () => resolve(request.result);
+              request.onerror = () => reject(request.error);
+            })
+        )
+      );
 
       return results.filter(Boolean) as OfflineDocument[];
     } catch (indexedDBError) {
       // Fallback to localStorage
       console.warn(
         "IndexedDB failed, falling back to localStorage for metadata",
-        indexedDBError,
+        indexedDBError
       );
 
       const results = offlineDocIds.map((id) => {
@@ -257,7 +278,7 @@ export async function getAllOfflineDocumentMetadata(): Promise<
 
 // Check if a document is available offline
 export async function isDocumentAvailableOffline(
-  documentId: string,
+  documentId: string
 ): Promise<boolean> {
   try {
     // First check localStorage for the flag
@@ -298,7 +319,7 @@ export async function isDocumentAvailableOffline(
     } catch (dbError) {
       console.error(
         "Error accessing IndexedDB for availability check:",
-        dbError,
+        dbError
       );
       return false;
     }

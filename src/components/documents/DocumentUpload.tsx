@@ -23,6 +23,7 @@ export default function DocumentUpload({
   const [preprocessingStatus, setPreprocessingStatus] = useState<string | null>(
     null
   );
+  const [preprocessingComplete, setPreprocessingComplete] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -46,6 +47,7 @@ export default function DocumentUpload({
 
   const handleFileSelection = (file: File) => {
     setPreprocessingStatus(null);
+    setPreprocessingComplete(false);
 
     // Check if file is a valid document type
     const validTypes = [
@@ -143,6 +145,7 @@ export default function DocumentUpload({
           setPreprocessingStatus(
             `Preprocessing EPUB: ${selectedFile.name} (0%)`
           );
+          setPreprocessingComplete(false);
 
           // Use the actual document ID from the database
           BookPreProcessingService.processBook(insertedDocumentId, selectedFile)
@@ -154,6 +157,7 @@ export default function DocumentUpload({
               setPreprocessingStatus(
                 `EPUB preprocessing complete: ${selectedFile.name}`
               );
+              setPreprocessingComplete(true);
 
               // Update the document record with the processed book ID if your schema supports it
               // This is optional based on your database schema
@@ -181,10 +185,10 @@ export default function DocumentUpload({
                 );
               }
 
-              // Clear status message after 5 seconds
+              // Clear status message after 15 seconds instead of 5
               setTimeout(() => {
                 setPreprocessingStatus(null);
-              }, 5000);
+              }, 15000);
             })
             .catch((error) => {
               console.error("Error preprocessing EPUB:", error);
@@ -192,23 +196,26 @@ export default function DocumentUpload({
                 `Error preprocessing EPUB: ${error.message}`
               );
 
-              // Clear error message after 5 seconds
+              // Clear error message after 15 seconds instead of 5
               setTimeout(() => {
                 setPreprocessingStatus(null);
-              }, 5000);
+              }, 15000);
             });
 
           // Set up polling to update the preprocessing status
           const statusInterval = setInterval(() => {
             const status =
               BookPreProcessingService.getProcessingStatus(insertedDocumentId);
+            console.log("Polling preprocessing status:", status);
             if (status.isProcessing) {
               setPreprocessingStatus(
                 `Preprocessing EPUB: ${selectedFile.name} (${status.progress}%)`
               );
             } else if (status.error) {
+              console.log("Processing error detected:", status.error);
               clearInterval(statusInterval);
             } else if (status.isProcessed) {
+              console.log("Processing already complete in status check");
               clearInterval(statusInterval);
             }
           }, 500);
@@ -311,8 +318,16 @@ export default function DocumentUpload({
       )}
 
       {preprocessingStatus && (
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
-          <p className="text-sm text-blue-600">{preprocessingStatus}</p>
+        <div className="mt-4 p-4 bg-blue-100 border-2 border-blue-300 rounded-md">
+          <p className="text-sm text-blue-700 font-medium">
+            {preprocessingStatus}
+          </p>
+          {preprocessingComplete && (
+            <p className="text-xs text-green-600 mt-1">
+              ✓ Processing complete! This message will disappear in a few
+              seconds.
+            </p>
+          )}
         </div>
       )}
     </div>

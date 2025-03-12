@@ -43,19 +43,24 @@ export async function getProcessedBook(bookId: string): Promise<{
 /**
  * Get a specific chapter from a processed book
  */
-export function getChapter(bookId: string, chapterId: string): string {
+export async function getChapter(
+  bookId: string,
+  chapterId: string
+): Promise<string> {
   return processedBookStorage.getChapter(bookId, chapterId);
 }
 
 /**
  * Get a list of all processed books
  */
-export function getProcessedBooks(): Array<{
-  id: string;
-  title: string;
-  author: string;
-  createdAt: string;
-}> {
+export async function getProcessedBooks(): Promise<
+  Array<{
+    id: string;
+    title: string;
+    author: string;
+    createdAt: string;
+  }>
+> {
   return processedBookStorage.getProcessedBooks();
 }
 
@@ -69,14 +74,16 @@ export function removeProcessedBook(bookId: string): void {
 /**
  * Get reading history
  */
-export function getReadingHistory(): ReadingHistoryEntry[] {
+export async function getReadingHistory(): Promise<ReadingHistoryEntry[]> {
   return processedBookStorage.getReadingHistory();
 }
 
 /**
  * Add or update reading history entry
  */
-export function addToReadingHistory(entry: ReadingHistoryEntry): void {
+export async function addToReadingHistory(
+  entry: ReadingHistoryEntry
+): Promise<void> {
   return processedBookStorage.addToReadingHistory(entry);
 }
 

@@ -25,7 +25,7 @@ export function EpubReader({
     try {
       // This is a simple check based on the file name
       // In a real implementation, we'd use a more reliable method (hash, etc.)
-      const processedBooks = getProcessedBooks();
+      const processedBooks = await getProcessedBooks();
       const matchingBook = processedBooks.find((book) =>
         book.title.includes(file.name.replace(".epub", ""))
       );

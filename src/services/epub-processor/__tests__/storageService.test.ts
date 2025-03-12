@@ -230,7 +230,7 @@ describe("ProcessedBookStorage", () => {
       expect(history[0].bookId).toBe("test-book-2");
     });
 
-    it("should get reading history", () => {
+    it("should get reading history", async () => {
       const entries = [
         {
           bookId: "test-book-1",
@@ -252,7 +252,7 @@ describe("ProcessedBookStorage", () => {
 
       mockLocalStorage.setItem("epub_reading_history", JSON.stringify(entries));
 
-      const history = storage.getReadingHistory();
+      const history = await storage.getReadingHistory();
       expect(history.length).toBe(2);
       expect(history[0].bookId).toBe("test-book-1");
       expect(history[1].bookId).toBe("test-book-2");

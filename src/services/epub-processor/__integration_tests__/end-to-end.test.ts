@@ -93,7 +93,7 @@ describe("EPUB to HTML End-to-End Processing", () => {
     );
 
     // Check stored content
-    const allProcessedBooks = storage.getProcessedBooks();
+    const allProcessedBooks = await storage.getProcessedBooks();
     expect(allProcessedBooks.length).toBe(1);
     expect(allProcessedBooks[0].id).toBe(bookId);
     expect(allProcessedBooks[0].title).toBe(mockBook.metadata.title);
@@ -108,9 +108,9 @@ describe("EPUB to HTML End-to-End Processing", () => {
       chapterId: mockBook.chapters[0].id,
     };
 
-    storage.addToReadingHistory(historyEntry);
+    await storage.addToReadingHistory(historyEntry);
 
-    const history = storage.getReadingHistory();
+    const history = await storage.getReadingHistory();
     expect(history.length).toBe(1);
     expect(history[0].bookId).toBe(bookId);
     expect(history[0].progress).toBe(0.25);

@@ -27,6 +27,10 @@ import { Grid2X2, List, Upload, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import DocumentCard, { DocumentItem } from "./DocumentCard";
 import DocumentUpload from "./DocumentUpload";
+import {
+  BookPreProcessingService,
+  ProcessingStatus,
+} from "../../services/bookPreProcessingService";
 
 interface DocumentLibraryProps {
   activeFilter?: string | null;
@@ -42,10 +46,10 @@ export default function DocumentLibrary({
   const [searchQuery, setSearchQuery] = useState("");
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<DocumentItem | null>(
-    null,
+    null
   );
   const [localFilter, setLocalFilter] = useState<string | null>(
-    activeFilter || null,
+    activeFilter || null
   );
 
   // State for tracking download progress
@@ -54,6 +58,11 @@ export default function DocumentLibrary({
   }>({});
   const [isDownloading, setIsDownloading] = useState<{
     [key: string]: boolean;
+  }>({});
+
+  // Add state for tracking EPUB processing statuses
+  const [processingStatuses, setProcessingStatuses] = useState<{
+    [key: string]: ProcessingStatus;
   }>({});
 
   // Update local filter when prop changes
@@ -96,6 +105,40 @@ export default function DocumentLibrary({
     }
   }, [localFilter]);
 
+  // Add an effect to check EPUB processing status
+  useEffect(() => {
+    if (!documents.length) return;
+
+    // Initialize status for EPUB documents
+    const initialStatuses: { [key: string]: ProcessingStatus } = {};
+
+    documents.forEach((doc) => {
+      if (doc.fileType.toLowerCase() === "epub") {
+        initialStatuses[doc.id] = BookPreProcessingService.getProcessingStatus(
+          doc.id
+        );
+      }
+    });
+
+    setProcessingStatuses(initialStatuses);
+
+    // Poll for status updates
+    const intervalId = setInterval(() => {
+      const updatedStatuses: { [key: string]: ProcessingStatus } = {};
+
+      documents.forEach((doc) => {
+        if (doc.fileType.toLowerCase() === "epub") {
+          updatedStatuses[doc.id] =
+            BookPreProcessingService.getProcessingStatus(doc.id);
+        }
+      });
+
+      setProcessingStatuses(updatedStatuses);
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [documents]);
+
   const fetchDocuments = async () => {
     try {
       setIsLoading(true);
@@ -115,7 +158,7 @@ export default function DocumentLibrary({
         // Log the reading progress data for debugging
         console.log(
           `Document ${doc.id} reading progress:`,
-          doc.reading_progress,
+          doc.reading_progress
         );
 
         // Parse reading progress, handling different data types
@@ -173,7 +216,7 @@ export default function DocumentLibrary({
           lastOpened: doc.lastOpened ? new Date(doc.lastOpened) : undefined,
           isOffline: true,
           readingProgress: doc.readingProgress || 0,
-        }),
+        })
       );
 
       // If we're in offline filter mode, only show offline docs
@@ -183,7 +226,7 @@ export default function DocumentLibrary({
         // Otherwise, merge with existing documents
         const existingDocIds = documents.map((doc) => doc.id);
         const newOfflineDocs = formattedOfflineDocs.filter(
-          (doc) => !existingDocIds.includes(doc.id),
+          (doc) => !existingDocIds.includes(doc.id)
         );
 
         setDocuments((prev) => [...prev, ...newOfflineDocs]);
@@ -234,7 +277,7 @@ export default function DocumentLibrary({
 
           // Update document in state immediately
           setDocuments((prev) =>
-            prev.map((d) => (d.id === doc.id ? { ...d, isOffline: false } : d)),
+            prev.map((d) => (d.id === doc.id ? { ...d, isOffline: false } : d))
           );
 
           // After a short delay, reset the download indicators
@@ -293,7 +336,7 @@ export default function DocumentLibrary({
 
           // Update document in state immediately
           setDocuments((prev) =>
-            prev.map((d) => (d.id === doc.id ? { ...d, isOffline: true } : d)),
+            prev.map((d) => (d.id === doc.id ? { ...d, isOffline: true } : d))
           );
 
           // After a short delay, reset the download indicators
@@ -342,7 +385,7 @@ export default function DocumentLibrary({
           if (total) {
             const progress = Math.min(
               40 + Math.round((receivedLength / total) * 50),
-              90,
+              90
             );
             setDownloadProgress((prev) => ({ ...prev, [doc.id]: progress }));
           }
@@ -375,7 +418,7 @@ export default function DocumentLibrary({
 
         // Update document in state immediately
         setDocuments((prev) =>
-          prev.map((d) => (d.id === doc.id ? { ...d, isOffline: true } : d)),
+          prev.map((d) => (d.id === doc.id ? { ...d, isOffline: true } : d))
         );
 
         // After a short delay, reset the download indicators
@@ -395,7 +438,7 @@ export default function DocumentLibrary({
           alert(`Download failed: ${error.message}`);
         } else {
           alert(
-            "Failed to download document for offline use. Please try again later.",
+            "Failed to download document for offline use. Please try again later."
           );
         }
       }
@@ -405,7 +448,7 @@ export default function DocumentLibrary({
       setIsDownloading((prev) => ({ ...prev, [doc.id]: false }));
       setDownloadProgress((prev) => ({ ...prev, [doc.id]: 0 }));
       alert(
-        "Failed to manage offline document. Please check your connection and try again.",
+        "Failed to manage offline document. Please check your connection and try again."
       );
     }
   };
@@ -455,6 +498,34 @@ export default function DocumentLibrary({
     // Refresh the document list after upload
     fetchDocuments();
     setIsUploadDialogOpen(false);
+  };
+
+  const renderDocumentGrid = () => {
+    return (
+      <div
+        className={`grid gap-6 ${
+          viewMode === "grid"
+            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            : "grid-cols-1"
+        }`}
+      >
+        {filteredDocuments.map((doc) => (
+          <DocumentCard
+            key={doc.id}
+            document={doc}
+            view={viewMode}
+            onOpen={() => handleOpenDocument(doc)}
+            onDownload={() => handleDownloadDocument(doc)}
+            onDelete={() => handleDeleteDocument(doc)}
+            downloadProgress={downloadProgress[doc.id] || 0}
+            isDownloading={isDownloading[doc.id] || false}
+            isProcessing={processingStatuses[doc.id]?.isProcessing || false}
+            processingProgress={processingStatuses[doc.id]?.progress || 0}
+            isProcessed={processingStatuses[doc.id]?.isProcessed || false}
+          />
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -515,26 +586,7 @@ export default function DocumentLibrary({
           </Button>
         </div>
       ) : (
-        <div
-          className={
-            viewMode === "grid"
-              ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
-              : "space-y-4"
-          }
-        >
-          {filteredDocuments.map((doc) => (
-            <DocumentCard
-              key={doc.id}
-              document={doc}
-              onOpen={handleOpenDocument}
-              onDownload={handleDownloadDocument}
-              onDelete={handleDeleteDocument}
-              view={viewMode}
-              downloadProgress={downloadProgress[doc.id] || 0}
-              isDownloading={isDownloading[doc.id] || false}
-            />
-          ))}
-        </div>
+        renderDocumentGrid()
       )}
 
       {/* Upload Dialog */}

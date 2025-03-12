@@ -297,6 +297,7 @@ interface DocumentItem {
   - [x] Add temporary visual feedback for testing purposes
   - [x] Simplify upload process to work with existing database schema
   - [x] Fix CORS and database schema compatibility issues
+  - [x] Improve visibility and duration of preprocessing status messages
   - [ ] Test that EPUBs are uploaded normally
   - [ ] Test that preprocessing is triggered in the background
   - [ ] Verify preprocessing completes without errors
@@ -315,20 +316,20 @@ interface DocumentItem {
 
 ### Phase 3: Library Integration
 
-- [ ] **DocumentLibrary Integration**
+- [x] **DocumentLibrary Integration**
 
-  - [ ] Add imports for BookPreProcessingService
-  - [ ] Add state for storing processing statuses
-  - [ ] Implement useEffect for initializing and polling statuses
-  - [ ] Add cleanup for the polling interval
-  - [ ] Pass processing status to DocumentCard components
+  - [x] Add imports for BookPreProcessingService
+  - [x] Add state for storing processing statuses
+  - [x] Implement useEffect for initializing and polling statuses
+  - [x] Add cleanup for the polling interval
+  - [x] Pass processing status to DocumentCard components
   - [ ] Test that processing status updates properly in the UI
 
-- [ ] **DocumentCard Updates**
-  - [ ] Update DocumentItem interface with processing properties
-  - [ ] Add isProcessing visual indicator with progress bar
-  - [ ] Add isProcessed visual indicator with checkmark
-  - [ ] Style the indicators to match the application design
+- [x] **DocumentCard Updates**
+  - [x] Update DocumentItem interface with processing properties
+  - [x] Add isProcessing visual indicator with progress bar
+  - [x] Add isProcessed visual indicator with checkmark
+  - [x] Style the indicators to match the application design
   - [ ] Test that processing indicators display correctly
   - [ ] Verify indicators update in real-time during processing
 
@@ -365,6 +366,33 @@ The initial implementation assumed the presence of `document_id` and `processed_
 2. Uses the actual document ID returned from the database after insertion
 3. Attempts to update with a `processed_epub_id` field but gracefully handles if that field doesn't exist
 4. Simplifies error handling to focus on the core functionality
+
+### Storage Improvements
+
+We identified and fixed a critical issue with the storage implementation:
+
+1. **Problem**: The original implementation was using `localStorage` which has a size limit of only 5-10MB, causing "QuotaExceededError" when trying to store processed EPUBs.
+
+2. **Solution**: We completely rewrote the `ProcessedBookStorage` class to:
+
+   - Use IndexedDB instead of localStorage, allowing storage of much larger files
+   - Add cloud synchronization with Supabase Storage to the "processed-books" bucket
+   - Enable offline-first processing with background synchronization
+   - Add automatic synchronization when coming back online
+
+3. **New Features**:
+
+   - Processed books are stored locally first, then synced to the cloud
+   - Books can be processed offline and will sync when connectivity returns
+   - Cloud storage serves as a backup and enables cross-device access
+   - The system manages a sync queue to track which books need syncing
+
+4. **Error Handling**:
+   - Improved error handling with detailed error states
+   - Graceful fallbacks when cloud storage is unavailable
+   - Retry mechanism for failed uploads
+
+This new implementation addresses the storage quota issue and provides a more robust solution for handling large EPUB files, especially on mobile devices with limited storage or intermittent connectivity.
 
 ## Conclusion
 

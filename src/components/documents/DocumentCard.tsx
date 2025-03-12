@@ -22,6 +22,9 @@ export interface DocumentItem {
   thumbnailUrl?: string;
   isOffline?: boolean;
   readingProgress?: number;
+  isEpubProcessed?: boolean;
+  isEpubProcessing?: boolean;
+  epubProcessingProgress?: number;
 }
 
 interface DocumentCardProps {
@@ -32,6 +35,9 @@ interface DocumentCardProps {
   view?: "grid" | "list";
   downloadProgress?: number;
   isDownloading?: boolean;
+  isProcessing?: boolean;
+  processingProgress?: number;
+  isProcessed?: boolean;
 }
 
 export default function DocumentCard({
@@ -42,6 +48,9 @@ export default function DocumentCard({
   view = "grid",
   downloadProgress = 0,
   isDownloading = false,
+  isProcessing = false,
+  processingProgress = 0,
+  isProcessed = false,
 }: DocumentCardProps) {
   const [isOffline, setIsOffline] = useState<boolean>(
     document.isOffline || false
@@ -86,8 +95,16 @@ export default function DocumentCard({
 
   if (view === "list") {
     return (
-      <Card className="flex flex-row items-center p-4 hover:shadow-md transition-shadow">
-        <div className="mr-4">{getFileIcon()}</div>
+      <Card className="flex flex-row items-center p-4 hover:shadow-md transition-shadow relative">
+        <div className="mr-4 relative">
+          {getFileIcon()}
+
+          {isProcessed && document.fileType.toLowerCase() === "epub" && (
+            <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+              <Check className="h-3 w-3 text-white" />
+            </div>
+          )}
+        </div>
         <div className="flex-grow">
           <h3 className="font-medium text-lg">{document.title}</h3>
           <div className="flex text-sm text-gray-500 space-x-4">
@@ -178,7 +195,7 @@ export default function DocumentCard({
 
   return (
     <Card className="overflow-hidden hover:shadow-md transition-shadow h-full flex flex-col">
-      <div className="p-4 bg-gray-50 flex items-center justify-center h-40">
+      <div className="p-4 bg-gray-50 flex items-center justify-center h-40 relative">
         {document.thumbnailUrl ? (
           <img
             src={document.thumbnailUrl}
@@ -191,6 +208,28 @@ export default function DocumentCard({
             <span className="mt-2 text-sm font-medium">
               {document.fileType.toUpperCase()}
             </span>
+          </div>
+        )}
+
+        {isProcessed && document.fileType.toLowerCase() === "epub" && (
+          <div className="absolute top-2 right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+            <Check className="h-4 w-4 text-white" />
+          </div>
+        )}
+
+        {isProcessing && (
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+            <div className="bg-white p-2 rounded shadow w-4/5">
+              <div className="h-2 bg-gray-200 rounded">
+                <div
+                  className="h-full bg-blue-500 rounded"
+                  style={{ width: `${processingProgress || 0}%` }}
+                />
+              </div>
+              <p className="text-xs mt-1 text-center">
+                Processing... {processingProgress || 0}%
+              </p>
+            </div>
           </div>
         )}
       </div>
