@@ -7,6 +7,8 @@ import {
 } from "react";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 import ePub from "epubjs";
 import { useResizeObserverErrorHandler } from "@/lib/useResizeObserverErrorHandler";
 
@@ -29,7 +31,7 @@ const EpubReader = forwardRef(
       isDarkMode = false,
       onProgressChange,
     }: EpubReaderProps,
-    ref,
+    ref
   ) => {
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [error, setError] = useState<string>("");
@@ -39,10 +41,31 @@ const EpubReader = forwardRef(
     const [readingProgress, setReadingProgress] = useState<number>(0);
     const [furthestCfi, setFurthestCfi] = useState<string>("");
     const [currentChapter, setCurrentChapter] = useState<string>("");
+    // New state variables for global pagination
+    const [globalCurrentPage, setGlobalCurrentPage] = useState<number>(1);
+    const [globalTotalPages, setGlobalTotalPages] = useState<number>(0);
+    const [pageInputValue, setPageInputValue] = useState<string>("1");
+    const [showPageInput, setShowPageInput] = useState<boolean>(false);
 
     const viewerRef = useRef<HTMLDivElement>(null);
     const bookRef = useRef<any>(null);
     const renditionRef = useRef<any>(null);
+
+    // Get font family style
+    function getFontFamilyStyle(font: string): string {
+      switch (font) {
+        case "inter":
+          return "Inter, sans-serif";
+        case "georgia":
+          return "Georgia, serif";
+        case "times":
+          return '"Times New Roman", Times, serif';
+        case "courier":
+          return '"Courier New", Courier, monospace';
+        default:
+          return "Inter, sans-serif";
+      }
+    }
 
     // Use custom hook to handle ResizeObserver errors
     useResizeObserverErrorHandler();
@@ -56,7 +79,8 @@ const EpubReader = forwardRef(
       goToPage: (page: number) => {
         // Implement navigation to a specific page
         if (renditionRef.current && bookRef.current) {
-          const percentage = page / totalPages;
+          // Use global page number for navigation
+          const percentage = page / globalTotalPages;
           const cfi = bookRef.current.locations.cfiFromPercentage(percentage);
           renditionRef.current.display(cfi);
         }
@@ -142,7 +166,7 @@ const EpubReader = forwardRef(
             setTimeout(
               () =>
                 reject(new Error("Book loading timed out after 10 seconds")),
-              10000,
+              10000
             );
           });
 
@@ -151,7 +175,7 @@ const EpubReader = forwardRef(
           } catch (timeoutErr) {
             console.warn(
               "Book loading timed out, continuing anyway:",
-              timeoutErr,
+              timeoutErr
             );
             // Continue anyway, as the book might still be usable
           }
@@ -211,6 +235,54 @@ const EpubReader = forwardRef(
             },
           });
 
+          // Calculate approximate total pages for the entire book
+          book.ready.then(() => {
+            // Get all spine items (chapters/sections)
+            const spineItems = book.spine.items;
+
+            // More sophisticated approximation based on container size and font size
+            // Typical EPUBs can fit about 500-700 words per page with default settings
+            // Average of 250 words per typical "epub page", adjusted for fontSize
+            const fontSizeAdjustment = fontSize / 16; // Base calculation on default 16px font
+            const containerSizeAdjustment =
+              (containerWidth * containerHeight) / (600 * 800); // Base on typical screen
+
+            // Approximate pages per chapter - scaled by font size and container dimensions
+            const estimatedPagesPerChapter = Math.max(
+              10,
+              Math.round(25 / (fontSizeAdjustment * containerSizeAdjustment))
+            );
+
+            const estimatedTotalPages = Math.max(
+              1,
+              spineItems.length * estimatedPagesPerChapter
+            );
+
+            console.log("Book spine items:", spineItems.length);
+            console.log(
+              "Estimated total pages:",
+              estimatedTotalPages,
+              "using",
+              estimatedPagesPerChapter,
+              "pages per chapter"
+            );
+            console.log(
+              "Adjustments - Font:",
+              fontSizeAdjustment,
+              "Container:",
+              containerSizeAdjustment
+            );
+
+            setGlobalTotalPages(estimatedTotalPages);
+
+            // Get TOC information if available
+            book.loaded.navigation.then((nav: any) => {
+              if (nav.toc && nav.toc.length > 0) {
+                console.log("Book TOC:", nav.toc);
+              }
+            });
+          });
+
           // Display the book with timeout protection
           try {
             const displayPromise = rendition.display();
@@ -218,9 +290,9 @@ const EpubReader = forwardRef(
               setTimeout(
                 () =>
                   reject(
-                    new Error("Rendition display timed out after 5 seconds"),
+                    new Error("Rendition display timed out after 5 seconds")
                   ),
-                5000,
+                5000
               );
             });
 
@@ -228,7 +300,7 @@ const EpubReader = forwardRef(
           } catch (displayErr) {
             console.warn(
               "Rendition display timed out, continuing anyway:",
-              displayErr,
+              displayErr
             );
             // Set loading to false even if display times out
             if (isMounted) setIsLoading(false);
@@ -243,16 +315,33 @@ const EpubReader = forwardRef(
             const currentPage = location.start.displayed.page;
             const totalPages = location.start.displayed.total;
 
-            // Calculate reading progress percentage
+            // Calculate reading progress percentage more precisely
             const progress =
               book.locations.percentageFromCfi(location.start.cfi) || 0;
             const progressPercentage = Math.round(progress * 100);
+
+            // Calculate global page number based on progress percentage
+            // Ensure we're not always at page 1 by using a more accurate calculation
+            const calculatedGlobalPage = Math.max(
+              1,
+              Math.ceil(globalTotalPages * progress)
+            );
+
+            console.log("Page relocated:", {
+              chapter: location.start.index + 1,
+              page: currentPage,
+              totalPagesInChapter: totalPages,
+              globalPage: calculatedGlobalPage,
+              progress: progressPercentage + "%",
+            });
 
             if (isMounted) {
               setCurrentPage(currentPage);
               setTotalPages(totalPages);
               setCurrentCfi(location.start.cfi);
               setReadingProgress(progressPercentage);
+              setGlobalCurrentPage(calculatedGlobalPage);
+              setPageInputValue(calculatedGlobalPage.toString());
 
               // Call the onProgressChange callback if provided
               if (onProgressChange) {
@@ -262,7 +351,7 @@ const EpubReader = forwardRef(
 
               // Update furthest position if current position is further
               const savedFurthestCfi = localStorage.getItem(
-                `epub-furthest-${book.key()}`,
+                `epub-furthest-${book.key()}`
               );
               const savedFurthestProgress = savedFurthestCfi
                 ? (book.locations.percentageFromCfi(savedFurthestCfi) || 0) *
@@ -273,7 +362,7 @@ const EpubReader = forwardRef(
                 setFurthestCfi(location.start.cfi);
                 localStorage.setItem(
                   `epub-furthest-${book.key()}`,
-                  location.start.cfi,
+                  location.start.cfi
                 );
               } else if (savedFurthestCfi && !furthestCfi) {
                 setFurthestCfi(savedFurthestCfi);
@@ -284,7 +373,7 @@ const EpubReader = forwardRef(
             if (location.start.cfi) {
               localStorage.setItem(
                 `epub-position-${book.key()}`,
-                location.start.cfi,
+                location.start.cfi
               );
             }
 
@@ -315,7 +404,7 @@ const EpubReader = forwardRef(
           // Check if we have a saved position
           const savedCfi = localStorage.getItem(`epub-position-${book.key()}`);
           const savedFurthestCfi = localStorage.getItem(
-            `epub-furthest-${book.key()}`,
+            `epub-furthest-${book.key()}`
           );
 
           if (savedFurthestCfi) {
@@ -347,7 +436,9 @@ const EpubReader = forwardRef(
           }
 
           if (url instanceof Blob) {
-            errorMessage += ` File size: ${(url.size / (1024 * 1024)).toFixed(2)}MB, Type: ${url.type}`;
+            errorMessage += ` File size: ${(url.size / (1024 * 1024)).toFixed(
+              2
+            )}MB, Type: ${url.type}`;
           }
 
           if (isMounted) {
@@ -376,7 +467,7 @@ const EpubReader = forwardRef(
       if (isLoading) {
         const timeout = setTimeout(() => {
           console.warn(
-            "Component-level force loading state to false after timeout",
+            "Component-level force loading state to false after timeout"
           );
           setIsLoading(false);
         }, 20000);
@@ -389,12 +480,71 @@ const EpubReader = forwardRef(
     const goToPrevious = () => {
       if (renditionRef.current) {
         renditionRef.current.prev();
+
+        // Update global page for immediate feedback, ensures synchronization
+        if (globalCurrentPage > 1) {
+          setGlobalCurrentPage(globalCurrentPage - 1);
+          setPageInputValue((globalCurrentPage - 1).toString());
+        }
       }
     };
 
     const goToNext = () => {
       if (renditionRef.current) {
         renditionRef.current.next();
+
+        // Update global page for immediate feedback, ensures synchronization
+        if (globalCurrentPage < globalTotalPages) {
+          setGlobalCurrentPage(globalCurrentPage + 1);
+          setPageInputValue((globalCurrentPage + 1).toString());
+        }
+      }
+    };
+
+    // Handle navigation to a specific page
+    const goToSpecificPage = () => {
+      const pageNum = parseInt(pageInputValue);
+      if (
+        !isNaN(pageNum) &&
+        pageNum >= 1 &&
+        pageNum <= globalTotalPages &&
+        renditionRef.current &&
+        bookRef.current
+      ) {
+        // Update global page immediately to provide instant feedback
+        setGlobalCurrentPage(pageNum);
+
+        const percentage = pageNum / globalTotalPages;
+        const cfi = bookRef.current.locations.cfiFromPercentage(percentage);
+        renditionRef.current.display(cfi);
+        setShowPageInput(false);
+      }
+    };
+
+    // Handle page input change
+    const handlePageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      setPageInputValue(e.target.value);
+    };
+
+    // Handle page input key press
+    const handlePageInputKeyPress = (
+      e: React.KeyboardEvent<HTMLInputElement>
+    ) => {
+      if (e.key === "Enter") {
+        goToSpecificPage();
+      }
+    };
+
+    // Handle slider change
+    const handleSliderChange = (value: number[]) => {
+      const pageNum = value[0];
+      setPageInputValue(pageNum.toString());
+      setGlobalCurrentPage(pageNum); // Update global page directly from slider value
+
+      if (renditionRef.current && bookRef.current) {
+        const percentage = pageNum / globalTotalPages;
+        const cfi = bookRef.current.locations.cfiFromPercentage(percentage);
+        renditionRef.current.display(cfi);
       }
     };
 
@@ -414,22 +564,6 @@ const EpubReader = forwardRef(
           </Button>
         </div>
       );
-    }
-
-    // Get font family style
-    function getFontFamilyStyle(font: string): string {
-      switch (font) {
-        case "inter":
-          return "Inter, sans-serif";
-        case "georgia":
-          return "Georgia, serif";
-        case "times":
-          return '"Times New Roman", Times, serif';
-        case "courier":
-          return '"Courier New", Courier, monospace';
-        default:
-          return "Inter, sans-serif";
-      }
     }
 
     return (
@@ -464,12 +598,15 @@ const EpubReader = forwardRef(
         </div>
 
         <div className="flex flex-col p-4 border-t">
-          {/* Progress bar */}
-          <div className="w-full h-2 bg-gray-200 rounded-full mb-3 relative">
-            {/* Current progress */}
-            <div
-              className="h-2 bg-blue-500 rounded-full absolute top-0 left-0"
-              style={{ width: `${readingProgress}%` }}
+          {/* Progress bar with slider functionality */}
+          <div className="w-full mb-3 relative">
+            <Slider
+              value={[globalCurrentPage]}
+              min={1}
+              max={globalTotalPages}
+              step={1}
+              onValueChange={handleSliderChange}
+              className="h-2"
             />
             {/* Furthest read indicator */}
             {furthestCfi && furthestCfi !== currentCfi && (
@@ -479,11 +616,12 @@ const EpubReader = forwardRef(
                   left: `${
                     bookRef.current
                       ? (bookRef.current.locations.percentageFromCfi(
-                          furthestCfi,
+                          furthestCfi
                         ) || 0) * 100
                       : 0
                   }%`,
                   borderRadius: "1px",
+                  zIndex: 10,
                 }}
                 title="Furthest read position"
               />
@@ -495,17 +633,34 @@ const EpubReader = forwardRef(
               variant="outline"
               size="sm"
               onClick={goToPrevious}
-              disabled={isLoading || currentPage <= 1}
+              disabled={isLoading || globalCurrentPage <= 1}
             >
               <ChevronLeft className="h-4 w-4 mr-2" /> Previous
             </Button>
 
             <div className="text-sm text-gray-500 flex flex-col items-center">
-              <div>
-                {!isLoading
-                  ? `Page ${currentPage} of ${totalPages}`
-                  : "Loading..."}
-              </div>
+              {showPageInput ? (
+                <div className="flex items-center space-x-2">
+                  <Input
+                    value={pageInputValue}
+                    onChange={handlePageInputChange}
+                    onKeyPress={handlePageInputKeyPress}
+                    className="w-16 text-center"
+                    autoFocus
+                    onBlur={goToSpecificPage}
+                  />
+                  <span>of {globalTotalPages}</span>
+                </div>
+              ) : (
+                <div
+                  className="cursor-pointer hover:underline"
+                  onClick={() => setShowPageInput(true)}
+                >
+                  {!isLoading
+                    ? `Page ${globalCurrentPage} of ${globalTotalPages}`
+                    : "Loading..."}
+                </div>
+              )}
               <div className="text-xs text-gray-400">
                 {isNaN(readingProgress) ? 0 : readingProgress}% completed
               </div>
@@ -515,7 +670,7 @@ const EpubReader = forwardRef(
               variant="outline"
               size="sm"
               onClick={goToNext}
-              disabled={isLoading || currentPage >= totalPages}
+              disabled={isLoading || globalCurrentPage >= globalTotalPages}
             >
               Next <ChevronRight className="h-4 w-4 ml-2" />
             </Button>
@@ -523,7 +678,7 @@ const EpubReader = forwardRef(
         </div>
       </div>
     );
-  },
+  }
 );
 
 export default EpubReader;

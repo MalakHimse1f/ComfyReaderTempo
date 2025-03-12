@@ -44,7 +44,7 @@ export default function DocumentCard({
   isDownloading = false,
 }: DocumentCardProps) {
   const [isOffline, setIsOffline] = useState<boolean>(
-    document.isOffline || false,
+    document.isOffline || false
   );
 
   // Check if document is available offline
@@ -59,7 +59,7 @@ export default function DocumentCard({
     // Log reading progress for debugging
     if (document.readingProgress) {
       console.log(
-        `Document ${document.id} has reading progress: ${document.readingProgress}%`,
+        `Document ${document.id} has reading progress: ${document.readingProgress}%`
       );
     }
   }, [document.id, document.isOffline, document.readingProgress]);

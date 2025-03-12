@@ -17,6 +17,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import EpubReader from "./EpubReader";
+import ReactEpubReader from "./ReactEpubReader";
 import {
   ChevronLeft,
   Settings,
@@ -36,6 +37,8 @@ import {
   saveDocumentOffline,
 } from "@/lib/offlineStorage";
 import { Separator } from "@/components/ui/separator";
+import EpubHandler from "./EpubHandler";
+import BasicEpubReader from "./BasicEpubReader";
 
 interface DocumentReaderProps {
   documentTitle?: string;
@@ -66,6 +69,7 @@ export default function DocumentReader({
   const [fileData, setFileData] = useState<Blob | null>(null);
   const [textDocumentPosition, setTextDocumentPosition] = useState<number>(0);
   const [textDocumentLength, setTextDocumentLength] = useState<number>(0);
+  const [currentChapter, setCurrentChapter] = useState<string>("");
 
   // Ref for the EPUB reader component
   const epubReaderRef = useRef(null);
@@ -112,7 +116,7 @@ export default function DocumentReader({
 
         console.log(
           `Successfully updated reading progress: ${readingProgress}% for document ${documentId}`,
-          data,
+          data
         );
       } catch (error) {
         console.error("Error updating reading progress:", error);
@@ -150,7 +154,7 @@ export default function DocumentReader({
           const offlineData = await getOfflineDocumentContent(documentId);
           console.log(
             "Retrieved offline content:",
-            offlineData ? "Content found" : "No content found",
+            offlineData ? "Content found" : "No content found"
           );
           fileData = offlineData;
           setFileData(offlineData);
@@ -165,7 +169,7 @@ export default function DocumentReader({
               [
                 `Unable to retrieve content for ${documentTitle}. Please try downloading the document again.`,
               ],
-              { type: "text/plain" },
+              { type: "text/plain" }
             );
             fileData = errorBlob;
             setFileData(errorBlob);
@@ -201,13 +205,46 @@ export default function DocumentReader({
               [
                 `Unable to fetch document from server. Please check your internet connection and try again.`,
               ],
-              { type: "text/plain" },
+              { type: "text/plain" }
             );
             fileData = errorBlob;
             setFileData(errorBlob);
             const extension = documentTitle.split(".").pop()?.toLowerCase();
             fileType = extension || "txt";
           }
+        }
+
+        console.log("[DocumentReader] File type detected:", fileType);
+        if (fileData instanceof Blob) {
+          console.log(
+            "[DocumentReader] File data is Blob, size:",
+            fileData.size,
+            "bytes, type:",
+            fileData.type
+          );
+
+          // For EPUB files, ensure they have the correct MIME type
+          if (
+            fileType.toLowerCase() === "epub" &&
+            fileData.type !== "application/epub+zip"
+          ) {
+            console.log("[DocumentReader] Correcting MIME type for EPUB file");
+            const arrayBuffer = await fileData.arrayBuffer();
+            fileData = new Blob([arrayBuffer], {
+              type: "application/epub+zip",
+            });
+            console.log("[DocumentReader] Corrected MIME type:", fileData.type);
+          }
+        } else if (typeof fileData === "string") {
+          console.log(
+            "[DocumentReader] File data is string URL, length:",
+            fileData.length
+          );
+        } else {
+          console.log(
+            "[DocumentReader] File data is in unexpected format:",
+            typeof fileData
+          );
         }
 
         // Read the file content based on file type
@@ -223,7 +260,7 @@ export default function DocumentReader({
 
             // Check if we have a saved position for this document
             const savedPosition = localStorage.getItem(
-              `txt-position-${documentId}`,
+              `txt-position-${documentId}`
             );
             if (savedPosition) {
               setTextDocumentPosition(parseInt(savedPosition));
@@ -231,7 +268,7 @@ export default function DocumentReader({
               // Calculate and set initial reading progress
               const progress = Math.min(
                 Math.round((parseInt(savedPosition) / content.length) * 100),
-                100,
+                100
               );
               setReadingProgress(progress);
               console.log(`Restored reading progress: ${progress}%`);
@@ -251,9 +288,9 @@ export default function DocumentReader({
                   if (scrollHeight > clientHeight) {
                     scrollPercentage = Math.min(
                       Math.round(
-                        (scrollPosition / (scrollHeight - clientHeight)) * 100,
+                        (scrollPosition / (scrollHeight - clientHeight)) * 100
                       ),
-                      100,
+                      100
                     );
                   }
 
@@ -263,7 +300,7 @@ export default function DocumentReader({
                   }
 
                   console.log(
-                    `Initial scroll calculation: ${scrollPercentage}%`,
+                    `Initial scroll calculation: ${scrollPercentage}%`
                   );
                   setReadingProgress(scrollPercentage);
                 }
@@ -285,7 +322,7 @@ export default function DocumentReader({
         } catch (readError) {
           console.error("Error reading file content:", readError);
           setDocumentContent(
-            `Unable to read document content. Error: ${readError.message}`,
+            `Unable to read document content. Error: ${readError.message}`
           );
         }
       } catch (error) {
@@ -313,11 +350,17 @@ export default function DocumentReader({
 
   return (
     <div
-      className={`min-h-screen ${isDarkMode ? "bg-gray-900 text-gray-100" : "bg-white text-gray-800"}`}
+      className={`min-h-screen ${
+        isDarkMode ? "bg-gray-900 text-gray-100" : "bg-white text-gray-800"
+      }`}
     >
       {/* Top Navigation */}
       <header
-        className={`sticky top-0 z-10 ${isDarkMode ? "bg-gray-800" : "bg-white"} border-b ${isDarkMode ? "border-gray-700" : "border-gray-200"} px-4 py-2`}
+        className={`sticky top-0 z-10 ${
+          isDarkMode ? "bg-gray-800" : "bg-white"
+        } border-b ${
+          isDarkMode ? "border-gray-700" : "border-gray-200"
+        } px-4 py-2`}
       >
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center">
@@ -328,12 +371,11 @@ export default function DocumentReader({
           </div>
 
           {/* Display current chapter for EPUBs */}
-          {documentContent === "EPUB_CONTENT_PLACEHOLDER" &&
-            epubReaderRef.current && (
-              <div className="text-sm text-gray-500 hidden md:block max-w-xs truncate">
-                {epubReaderRef.current?.getCurrentChapter() || ""}
-              </div>
-            )}
+          {documentContent === "EPUB_CONTENT_PLACEHOLDER" && (
+            <div className="text-sm text-gray-500 hidden md:block max-w-xs truncate">
+              {currentChapter || ""}
+            </div>
+          )}
 
           <div className="flex items-center space-x-2">
             <Button variant="ghost" size="icon" title="Bookmark">
@@ -513,7 +555,7 @@ export default function DocumentReader({
               contain: "layout size", // Improve performance and prevent layout thrashing
             }}
           >
-            <EpubReader
+            <BasicEpubReader
               ref={epubReaderRef}
               url={fileData}
               fontFamily={fontFamily}
@@ -524,20 +566,26 @@ export default function DocumentReader({
                 console.log(`Progress from EPUB reader: ${progress}%`);
                 setReadingProgress(progress);
               }}
+              onChapterChange={(chapter) => {
+                console.log(`Chapter changed: ${chapter}`);
+                setCurrentChapter(chapter);
+              }}
             />
           </div>
         ) : (
           <div
-            className={`mx-auto prose ${isDarkMode ? "prose-invert" : ""} max-w-none`}
+            className={`mx-auto prose ${
+              isDarkMode ? "prose-invert" : ""
+            } max-w-none`}
             style={{
               fontFamily:
                 fontFamily === "inter"
                   ? "Inter, sans-serif"
                   : fontFamily === "georgia"
-                    ? "Georgia, serif"
-                    : fontFamily === "times"
-                      ? '"Times New Roman", Times, serif'
-                      : '"Courier New", Courier, monospace',
+                  ? "Georgia, serif"
+                  : fontFamily === "times"
+                  ? '"Times New Roman", Times, serif'
+                  : '"Courier New", Courier, monospace',
               fontSize: `${fontSize}px`,
               lineHeight: lineSpacing,
               padding: `0 ${margins}px`,
@@ -562,9 +610,9 @@ export default function DocumentReader({
                   if (scrollHeight > clientHeight) {
                     scrollPercentage = Math.min(
                       Math.round(
-                        (scrollPosition / (scrollHeight - clientHeight)) * 100,
+                        (scrollPosition / (scrollHeight - clientHeight)) * 100
                       ),
-                      100,
+                      100
                     );
                   }
 
@@ -574,7 +622,7 @@ export default function DocumentReader({
                   }
 
                   console.log(
-                    `Scroll position: ${scrollPosition}/${scrollHeight}, Progress: ${scrollPercentage}%`,
+                    `Scroll position: ${scrollPosition}/${scrollHeight}, Progress: ${scrollPercentage}%`
                   );
 
                   // Update reading progress
@@ -584,12 +632,12 @@ export default function DocumentReader({
                   if (documentId) {
                     // Calculate approximate character position based on scroll percentage
                     const approxPosition = Math.round(
-                      (scrollPercentage / 100) * textDocumentLength,
+                      (scrollPercentage / 100) * textDocumentLength
                     );
                     setTextDocumentPosition(approxPosition);
                     localStorage.setItem(
                       `txt-position-${documentId}`,
-                      approxPosition.toString(),
+                      approxPosition.toString()
                     );
                   }
                 };
